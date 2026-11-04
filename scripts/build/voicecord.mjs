@@ -10,12 +10,12 @@
 // voicecord-module の build.mjs 由来。
 //
 //   dist/voicecord/engine.mjs          エンジン。frida は import 文のまま残す
-//   dist/voicecord/hook.js             frida エージェント（無改造のコピー）
+//   dist/voicecord/hook.js             frida エージェント（esbuild の copy ローダーで無改造のまま置く）
 //   dist/voicecord/node_modules/...    frida の package.json と build/、実行時依存
 //
 // --no-voicecord で全部飛ばす。frida ランタイムは Windows で frida が入っているときだけ配る。
 
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, utimesSync } from "fs";
 import { createRequire } from "module";
 import { dirname, join } from "path";
 
@@ -41,20 +41,32 @@ export function voiceCordBuildConfigs() {
         packages: "external",
         sourcemap: true,
         logLevel: "info"
+    }, {
+        // frida エージェントは無改造でそのまま置く。esbuild の copy ローダーなら watch 中の編集も反映される
+        entryPoints: ["src/voicecord/agent/hook.js"],
+        outfile: join(OUT_DIR, "hook.js"),
+        loader: { ".js": "copy" },
+        logLevel: "info"
     }];
 }
 
-/** 同じ内容ならコピーしない。frida のバイナリは約 75MB あり、毎回コピーすると遅い */
+/**
+ * 変わったときだけコピーする。frida のバイナリは約 75MB あり、毎回コピーすると遅い。
+ * コピー先にはコピー元の更新日時を写し、サイズと更新日時が両方一致するときだけ省く
+ * （日時の前後だけで判定すると、古い版へ戻したときに取り残される）。
+ */
 function copyIfChanged(from, to) {
+    const a = statSync(from);
     try {
-        const a = statSync(from);
         const b = statSync(to);
-        if (a.size === b.size && a.mtimeMs <= b.mtimeMs) return 0;
+        // utimesSync はミリ秒に丸めて書くので、1ms 未満の差は同じと見なす
+        if (a.size === b.size && Math.abs(a.mtimeMs - b.mtimeMs) < 1) return 0;
     } catch {
         // 宛先が無い。コピーする
     }
     mkdirSync(dirname(to), { recursive: true });
     copyFileSync(from, to);
+    utimesSync(to, a.atime, a.mtime);
     return 1;
 }
 
@@ -93,13 +105,10 @@ export function collectRuntimeDeps(fridaDir) {
     return found;
 }
 
-/** hook.js と frida ランタイムを置く */
+/** frida ランタイムを置く（依存の更新時にしか変わらないので watch はしない） */
 export function copyVoiceCordRuntime() {
     if (IS_VOICECORD_DISABLED) return;
     mkdirSync(OUT_DIR, { recursive: true });
-
-    // frida エージェントは無改造でそのまま置く（開発中にホット差し替えできる）
-    copyIfChanged("src/voicecord/agent/hook.js", join(OUT_DIR, "hook.js"));
 
     if (process.platform !== "win32") {
         console.log("VoiceCord: Windows 以外なので frida ランタイムは配りません");
