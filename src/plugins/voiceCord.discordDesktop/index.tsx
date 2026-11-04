@@ -12,6 +12,7 @@ import { showToast } from "@webpack/common";
 import { createApi, type VoiceCordNative } from "./api";
 import { mountFab, unmountFab } from "./components/Fab";
 import { syncLevelModal } from "./components/LevelModal";
+import { PluginSettings } from "./components/PluginSettings";
 import { VoiceCordButton } from "./components/VoiceCordButton";
 import { onSoundClick, renderHeaderAccessories, watchSoundboardStyles, watchVoiceChannel } from "./discordIntegration";
 import { setEngineStatus } from "./engineStatus";
@@ -40,6 +41,7 @@ export default definePlugin({
     authors: [],
     enabledByDefault: true,
     managedStyle: style,
+    settingsAboutComponent: () => <PluginSettings />,
 
     patches: [
         {
