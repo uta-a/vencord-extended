@@ -62,7 +62,9 @@ export function VSlider({ value, min, max, step = 1, onChange, onCommit, label, 
 }) {
     const last = useRef(value);
     const generation = useRef(0);
-    if (value !== last.current) {
+    // dB と線形の変換を往復すると微小な誤差が出る（0.5 → 0.5000000000000004）。それを外からの更新と取り違えると、
+    // ドラッグ中に作り直されて掴んだつまみが外れるので、刻みより十分小さい差は同じ値と見なす
+    if (Math.abs(value - last.current) > step / 1000) {
         generation.current++;
         last.current = value;
     }

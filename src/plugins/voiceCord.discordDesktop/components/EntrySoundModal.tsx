@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import ErrorBoundary from "@components/ErrorBoundary";
 import { FormSwitch } from "@components/FormSwitch";
 import { store } from "@plugins/voiceCord.discordDesktop/store";
 import { useVoiceCord } from "@plugins/voiceCord.discordDesktop/useVoiceCord";
@@ -140,7 +141,10 @@ function EntrySoundModal({ modalProps }: { modalProps: RenderModalProps; }) {
     );
 }
 
+// openModal で直接描くので、起点のボタンの ErrorBoundary では守られない。モーダルごと包む
+const SafeEntrySoundModal = ErrorBoundary.wrap(EntrySoundModal, { noop: false });
+
 export function openEntrySoundModal() {
     // 閉じたら試聴を止める。画面を閉じた後も鳴り続けると、止める手段が分かりにくい
-    openModal(props => <EntrySoundModal modalProps={props} />, { onCloseCallback: () => store.getState().stopPreview() });
+    openModal(props => <SafeEntrySoundModal modalProps={props} />, { onCloseCallback: () => store.getState().stopPreview() });
 }

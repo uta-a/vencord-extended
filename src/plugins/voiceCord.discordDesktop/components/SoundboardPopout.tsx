@@ -13,7 +13,7 @@ import { KRISP_HINT, store } from "@plugins/voiceCord.discordDesktop/store";
 import { useVoiceCord } from "@plugins/voiceCord.discordDesktop/useVoiceCord";
 import { classes } from "@utils/misc";
 import { Popout, React, ScrollerThin, Tooltip, useEffect, useMemo, useRef, useState } from "@webpack/common";
-import type { MouseEvent, ReactNode } from "react";
+import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 
 import { DOT_LABEL, statusProblems } from "../../../voicecord/shared/status";
 import type { ConnState, SoundItem } from "../../../voicecord/shared/types";
@@ -99,8 +99,16 @@ function SoundTile({ sound }: { sound: SoundItem; }) {
     const isPreviewing = previewSrc === sound.id;
     const isConnected = connection === "connected";
 
-    // VC へ音を流す操作なので、ページ側のスクリプトの合成クリックでは鳴らさない
+    // VC へ音を流す操作なので、ページ側のスクリプトの合成イベント（クリックもキーも）では鳴らさない
     const onPlay = guardTrusted("タイルの再生", () => void play(sound.id));
+    const isActivateKey = (e: KeyboardEvent) => e.key === "Enter" || e.key === " ";
+    // 子の操作（試聴・音量）はキーボードでも押せるようにし、親の再生へは伝えない
+    const secondaryKey = (action: () => void) => (e: KeyboardEvent) => {
+        if (!isActivateKey(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        action();
+    };
 
     return (
         <li
@@ -135,11 +143,10 @@ function SoundTile({ sound }: { sound: SoundItem; }) {
                             onPlay(e);
                         }}
                         onKeyDown={e => {
-                            if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                // キーボードの操作はブラウザ自身が作るので信頼できる
-                                void play(sound.id);
-                            }
+                            // 子から伝わってきたキー入力と、押しっぱなしの自動リピートでは鳴らさない
+                            if (e.target !== e.currentTarget || !isActivateKey(e) || e.repeat) return;
+                            e.preventDefault();
+                            onPlay(e);
                         }}
                     >
                         <div className={SoundClasses.soundInfo}>
@@ -158,6 +165,7 @@ function SoundTile({ sound }: { sound: SoundItem; }) {
                                     aria-label={isPreviewing ? `${sound.id}の試聴を停止` : `${sound.id}を試聴`}
                                     className={SoundClasses.secondaryButton}
                                     onClick={() => togglePreview(sound.id)}
+                                    onKeyDown={secondaryKey(() => togglePreview(sound.id))}
                                 >
                                     {isPreviewing ? <StopIcon size={16} className={SoundClasses.secondaryIcon} /> : <HeadphonesIcon size={16} className={SoundClasses.secondaryIcon} />}
                                 </div>
@@ -169,6 +177,7 @@ function SoundTile({ sound }: { sound: SoundItem; }) {
                                     aria-label={`${sound.id}の音量設定`}
                                     className={SoundClasses.secondaryButton}
                                     onClick={() => setVolumeOpen(v => !v)}
+                                    onKeyDown={secondaryKey(() => setVolumeOpen(v => !v))}
                                 >
                                     <SlidersIcon size={16} className={SoundClasses.secondaryIcon} />
                                 </div>
