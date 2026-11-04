@@ -19,7 +19,7 @@ import type {
 import { recommendSourceVolume, validateVoice } from "./lib/calibration";
 import { fmtDb, toLinear } from "./lib/db";
 import { listOutputDevices,LocalAudio } from "./lib/localAudio";
-import { scanSources } from "./lib/sourceScan";
+import { scanSources, sourceKey } from "./lib/sourceScan";
 
 // 窓口（api.ts）。プラグインの start() で bindApi に渡し、stop() で外す。
 // 起動していない間は undefined で、store の各操作は !api の分岐で止まる
@@ -254,6 +254,10 @@ const NOT_STARTED = "VoiceCord が起動していません";
 // ユーザーの操作に対応しておらず、出すと無意味な通知が増えるだけ。
 let initStarted = false; // React StrictMode の二重 init(→二重 attach)を防ぐ
 let connectSeq = 0; // 連続ビルド切替で古い attach 結果が後勝ちするのを防ぐ世代トークン
+// 全停止で進める世代。全停止の前に始めた再生が、送信を待つ間に止められていたら行を作らず止める
+let stopGen = 0;
+// resetStore で進める世代。プラグインを止めた後に、古い init が状態を書き戻さないようにする
+let lifeGen = 0;
 // 「音量を揃えていない音源」を鳴らしたことを知らせた srcId。校正済みの環境では送信音量が
 // 「全音源が normalizeRefDbfs に揃っている」前提で決まるため(calibration.ts)、校正後に
 // 追加/リネームした音源だけが素の録音レベルのまま相手へ届く。音量を勝手に書き換えると
@@ -464,11 +468,18 @@ export const store = createStore<State>((rawSet, get) => {
 
   // VC への再生の本体。音源の見つけ方(フォルダ / サウンドボード)が違っても、送り方・行の作り方・
   // サイドトーン・失敗の出し方は同じにする。label は再生中一覧に出す名前。
-  const playResolved = async (snd: SoundItem, vol: number, label: string): Promise<void> => {
+  const playResolved = async (snd: SoundItem, vol: number, label: string, gen: number): Promise<void> => {
     if (!api) return;
+    // 取得やデコードを待つ間に全停止されていたら送らない
+    if (gen !== stopGen) return;
     const srcId = snd.id;
     try {
       const vid = await api.play({ srcId, path: snd.path, fp: snd.fp, vol });
+      // 送信を待つ間に全停止されていたら、行を作らずに止める（緊急停止で止まらない音を残さない）
+      if (gen !== stopGen) {
+        if (vid) void api.stop(vid);
+        return;
+      }
       if (!vid) {
         // engine 側は attach していないと null を返す(engine/index.ts の play)。
         // 上の connection チェックは呼び出し時点のスナップショットなので、await の間に
@@ -540,6 +551,7 @@ export const store = createStore<State>((rawSet, get) => {
   init: async () => {
     if (initStarted) return;
     initStarted = true;
+    const life = lifeGen;
     if (!api) {
       set({ ready: true });
       return;
@@ -778,6 +790,7 @@ export const store = createStore<State>((rawSet, get) => {
     });
     try {
       const cfg = await api.getConfig();
+      if (life !== lifeGen) return;
       set({
         folder: cfg.folder,
         build: cfg.build,
@@ -804,15 +817,20 @@ export const store = createStore<State>((rawSet, get) => {
       // 「校正も音量も消えた」ことにしか気付けない。
       if (cfg.loadWarning) set({ status: cfg.loadWarning });
       const sounds = await api.scanFolder(cfg.folder);
+      if (life !== lifeGen) return;
       set({ sounds });
       // 出力デバイス列挙 + サイドトーン/試聴の出力先を設定
       const devices = await listOutputDevices();
+      if (life !== lifeGen) return;
       set({ devices });
       void localAudio.setDevice(cfg.sidetoneDevice).catch(e => set({ status: String(e) }));
       await get().connect(cfg.build);
+      if (life !== lifeGen) return;
     } catch (e) {
+      if (life !== lifeGen) return;
       set({ status: "初期化エラー: " + String(e) });
     }
+    if (life !== lifeGen) return;
     set({ ready: true });
   },
 
@@ -974,7 +992,7 @@ export const store = createStore<State>((rawSet, get) => {
       let reloaded = 0;
       let manual = 0;
       for (const snd of targets) {
-        const st = r.stats.get(snd.fp);
+        const st = r.stats.get(sourceKey(snd));
         if (!st) continue;
         // 一覧の再読込で消えた/差し替わった音源には書かない(config に幽霊の音量が残る)。
         if (!get().sounds.some(s => s.id === snd.id && s.fp === snd.fp)) {
@@ -1012,6 +1030,7 @@ export const store = createStore<State>((rawSet, get) => {
   },
 
   play: async (srcId, override) => {
+    const gen = stopGen;
     const st0 = get();
     const snd = st0.sounds.find(s => s.id === srcId);
     if (!snd) {
@@ -1038,7 +1057,7 @@ export const store = createStore<State>((rawSet, get) => {
         status: `${snd.id} はまだ音量を揃えていません。音量調整の「音源の音量を揃える」を実行するまで、この音だけ相手への大きさがずれます`
       });
     }
-    await playResolved(snd, vol, snd.id);
+    await playResolved(snd, vol, snd.id, gen);
   },
 
   playSoundboardSound: async (soundId, name) => {
@@ -1052,10 +1071,7 @@ export const store = createStore<State>((rawSet, get) => {
     const label = name.trim() || soundId;
     // 音源別音量は無い(音量を揃える対象でもない)ので、素の 100% で鳴らし、未調整の通知も出さない
     const vol = 1.0;
-    if (!api) {
-      set({ status: NOT_STARTED });
-      return;
-    }
+    const gen = stopGen;
     let fetched: { path: string; fp: string };
     try {
       fetched = await api.fetchSoundboardSound(soundId);
@@ -1073,7 +1089,7 @@ export const store = createStore<State>((rawSet, get) => {
       set({ status: "ほかのサーバーのサウンドを鳴らす設定がオフになったため、再生しませんでした" });
       return;
     }
-    await playResolved({ id: srcId, name: label, path: fetched.path, fp: fetched.fp, kind: "file" }, vol, label);
+    await playResolved({ id: srcId, name: label, path: fetched.path, fp: fetched.fp, kind: "file" }, vol, label, gen);
   },
 
   stopVoice: voiceId => {
@@ -1090,6 +1106,7 @@ export const store = createStore<State>((rawSet, get) => {
     }));
   },
   stopAll: () => {
+    stopGen++;
     void api?.stopAll();
     localAudio.stopAll();
     set({ voices: [], previewSrc: null });
@@ -1263,6 +1280,8 @@ const INITIAL_STATE = store.getState();
 // プラグインの stop() で呼ぶ。鳴っている音とタイマーを止め、次の start() で init からやり直せるようにする
 export function resetStore(): void {
   initStarted = false;
+  lifeGen++;
+  stopGen++;
   connectSeq++;
   localAudio.stopAll();
   resetEntryState();

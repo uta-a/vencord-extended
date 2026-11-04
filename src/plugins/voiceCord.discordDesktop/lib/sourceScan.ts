@@ -12,6 +12,9 @@ import type { Api, SoundItem, SourceStats } from "../../../voicecord/shared/type
 
 export const SCAN_CONCURRENCY = 3; // ffmpeg 変換が走るので欲張らない
 
+// 測定結果のキー。fp は更新日時とサイズなので、コピーした別ファイルと一致しうる。パスも含める
+export const sourceKey = (s: Pick<SoundItem, "path" | "fp">): string => `${s.path.replace(/\\/g, "/").toLowerCase()}\0${s.fp}`;
+
 // 測定結果はダイアログを閉じても保持する(Radix は閉じると中身をアンマウントするため、
 // これが無いと開き直すたびに全件測り直しになる)。キーは内容指紋なので、ファイルを
 // 差し替えれば自動的に測り直しになる。ダイアログとボタンで共有し、片方で測った分は
@@ -36,7 +39,7 @@ export interface ScanProgress {
 }
 
 export interface ScanResult {
-  stats: Map<string, SourceStats> // キーは fp
+  stats: Map<string, SourceStats> // キーは sourceKey
   failed: number
   // 理由を捨てない。握り潰すと「使えない」としか分からなくなる。文言の日本語化は
   // 表示する側に任せる(ここから store を読むと store → lib → store の循環になる)。
@@ -69,10 +72,11 @@ export async function scanSources(
       let st: SourceStats | undefined;
       try {
         const gen = cacheGen;
-        st = statsCache.get(item.fp) ?? (await api.sourceStats(item.path));
+        const key = sourceKey(item);
+        st = statsCache.get(key) ?? (await api.sourceStats(item.path));
         if (!alive()) return;
-        if (gen === cacheGen) statsCache.set(item.fp, st);
-        stats.set(item.fp, st);
+        if (gen === cacheGen) statsCache.set(key, st);
+        stats.set(key, st);
       } catch (e) {
         if (!alive()) return;
         failed++;

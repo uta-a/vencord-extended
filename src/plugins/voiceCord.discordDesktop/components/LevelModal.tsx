@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import ErrorBoundary from "@components/ErrorBoundary";
 import { currentTargetDb, medianDbfs, recommendedTargetBand, recommendMasterDb, recommendSourceVolume, targetRange, voiceMatchDb } from "@plugins/voiceCord.discordDesktop/lib/calibration";
 import { fmtDb, fmtDbfs, MASTER_MAX_DB, TARGET_MAX_DB, TARGET_MIN_DB, toDb, toLinear } from "@plugins/voiceCord.discordDesktop/lib/db";
-import { clearSourceStatsCache, scanSources } from "@plugins/voiceCord.discordDesktop/lib/sourceScan";
+import { clearSourceStatsCache, scanSources, sourceKey } from "@plugins/voiceCord.discordDesktop/lib/sourceScan";
 import { guardTrusted } from "@plugins/voiceCord.discordDesktop/lib/trusted";
 import { needApi } from "@plugins/voiceCord.discordDesktop/state";
 import { humanizeEngineMessage, store } from "@plugins/voiceCord.discordDesktop/store";
@@ -70,7 +71,7 @@ function useNormalizeScan(sounds: SoundItem[]) {
         if (!alive()) return;
         const got: Record<string, SourceStats> = {};
         for (const s of sounds) {
-            const st = r.stats.get(s.fp);
+            const st = r.stats.get(sourceKey(s));
             if (st) got[s.id] = st;
         }
         setFailed(r.failed);
@@ -473,12 +474,15 @@ function LevelModal({ modalProps }: { modalProps: RenderModalProps; }) {
     );
 }
 
+// openModal で直接描くので、起点のボタンの ErrorBoundary では守られない。モーダルごと包む
+const SafeLevelModal = ErrorBoundary.wrap(LevelModal, { noop: false });
+
 // store の levelOpen に合わせて開閉する（フェーダー横と設定画面の両方から開くので、実体は 1 つ）
 let modalKey: string | null = null;
 
 export function syncLevelModal(open: boolean) {
     if (open && modalKey === null) {
-        modalKey = openModal(props => <LevelModal modalProps={props} />, {
+        modalKey = openModal(props => <SafeLevelModal modalProps={props} />, {
             onCloseCallback: () => {
                 modalKey = null;
                 // 閉じたら計測を止める（setLevelOpen(false) が cancelCalib まで面倒を見る）

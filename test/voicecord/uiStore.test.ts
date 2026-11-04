@@ -658,3 +658,43 @@ describe('UI store のやり直し（プラグインの stop → start）', () =
     expect(store.getState().status).toBe('VoiceCord が起動していません')
   })
 })
+describe('UI store の取り消し', () => {
+  afterEach(() => {
+    vi.resetModules()
+  })
+
+  it('全停止の前に始めた再生は、送信が終わってから届いても行を作らず止める', async () => {
+    const { store, bindApi } = await import('../../src/plugins/voiceCord.discordDesktop/store')
+    let finish: (vid: string) => void = () => {}
+    const stops: string[] = []
+    const api = {
+      ...createMockApi(),
+      play: () => new Promise<string | null>(r => { finish = r }),
+      stop: async (vid: string) => { stops.push(vid) }
+    }
+    bindApi(api)
+    store.setState({ attached: true, connection: 'connected', sounds: [{ id: 'a', name: 'a.wav', path: 'a.wav', fp: '1', kind: 'file' }], voices: [] })
+    const job = store.getState().play('a')
+    await Promise.resolve()
+    store.getState().stopAll()
+    finish('v-late')
+    await job
+    expect(store.getState().voices).toEqual([])
+    expect(stops).toContain('v-late')
+  })
+
+  it('init の途中で resetStore したら、古い init は状態を書き戻さない', async () => {
+    const { store, bindApi, resetStore } = await import('../../src/plugins/voiceCord.discordDesktop/store')
+    let giveConfig: (c: unknown) => void = () => {}
+    const base = createMockApi()
+    const api = { ...base, getConfig: () => new Promise(r => { giveConfig = r }) as ReturnType<typeof base.getConfig> }
+    bindApi(api)
+    const job = store.getState().init()
+    resetStore()
+    giveConfig({ ...(await base.getConfig()), folder: 'C:/old', master: 2.5 })
+    await job
+    expect(store.getState().folder).toBe('')
+    expect(store.getState().ready).toBe(false)
+    expect(store.getState().settings.master).not.toBe(2.5)
+  })
+})

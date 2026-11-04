@@ -3,6 +3,7 @@ import {
   SCAN_CONCURRENCY,
   clearSourceStatsCache,
   scanSources,
+  sourceKey,
   type ScanProgress
 } from '../../src/plugins/voiceCord.discordDesktop/lib/sourceScan.js'
 import type { SoundItem, SourceStats } from '../../src/voicecord/shared/types.js'
@@ -62,7 +63,7 @@ describe('scanSources', () => {
     clearSourceStatsCache()
   })
 
-  it('同時に走らせる測定は SCAN_CONCURRENCY 本までで、全件の結果を fp で返す', async () => {
+  it('同時に走らせる測定は SCAN_CONCURRENCY 本までで、全件の結果を sourceKey（パス + fp）で返す', async () => {
     const d = deferredApi()
     const sounds = Array.from({ length: 7 }, (_, i) => sound(i))
     const progress: ScanProgress[] = []
@@ -74,7 +75,7 @@ describe('scanSources', () => {
     expect(d.maxInflight()).toBe(SCAN_CONCURRENCY)
     expect(r.failed).toBe(0)
     expect(r.firstError).toBeNull()
-    expect([...r.stats.keys()].sort()).toEqual(sounds.map((s) => s.fp).sort())
+    expect([...r.stats.keys()].sort()).toEqual(sounds.map((s) => sourceKey(s)).sort())
     expect(progress.map((p) => p.done)).toEqual([1, 2, 3, 4, 5, 6, 7])
     expect(progress.every((p) => p.total === 7)).toBe(true)
   })
@@ -90,7 +91,7 @@ describe('scanSources', () => {
     const r = await job
     expect(r.failed).toBe(2)
     expect(r.firstError).toEqual({ id: 's0', message: 'Error: ffmpeg failed' })
-    expect([...r.stats.keys()]).toEqual(['fp2'])
+    expect([...r.stats.keys()]).toEqual([sourceKey(sound(2))])
   })
 
   it('一度測った fp は測り直さず、キャッシュを消すと測り直す', async () => {
@@ -153,5 +154,21 @@ describe('scanSources', () => {
     expect(d.calls).toHaveLength(SCAN_CONCURRENCY + 1)
     expect(progress).toHaveLength(before)
     expect(r.stats.size).toBe(before)
+  })
+})
+
+describe('同じ内容指紋（fp）の別の音源', () => {
+  beforeEach(() => clearSourceStatsCache())
+
+  it('fp が同じでもパスが違えば別々に測り、結果も混ぜない（コピーしたファイルは更新日時とサイズが一致しうる）', async () => {
+    const a: SoundItem = { id: 'a', name: 'a.wav', path: 'C:/sounds/a.wav', fp: 'same', kind: 'file' }
+    const b: SoundItem = { id: 'b', name: 'b.wav', path: 'C:/sounds/b.wav', fp: 'same', kind: 'file' }
+    const calls: string[] = []
+    const api = { sourceStats: async (path: string) => { calls.push(path); return statsFor(path) } }
+    const r = await scanSources([a, b], api)
+    expect(calls.sort()).toEqual([a.path, b.path])
+    expect(r.stats.get(sourceKey(a))?.samples).toBe(a.path.length)
+    expect(r.stats.get(sourceKey(b))?.samples).toBe(b.path.length)
+    expect(sourceKey(a)).not.toBe(sourceKey(b))
   })
 })
