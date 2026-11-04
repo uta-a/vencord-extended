@@ -41,6 +41,7 @@ import { ChannelStore, ConfirmModal, GuildMemberStore, openModal, Parser, Permis
 import { JSX } from "react";
 
 import gitHash from "~git-hash";
+import gitRemote from "~git-remote"; // vencord-extended
 import plugins, { PluginMeta } from "~plugins";
 
 import SettingsPlugin from "./settings";
@@ -69,6 +70,21 @@ async function forceUpdate() {
     return outdated;
 }
 
+// vencord-extended: 非公式 fork の不具合を Vencord 公式に報告させない
+function showForkWarning() {
+    openModal(props => (
+        <ConfirmModal {...props} title="Hold on!" confirmText="OK" variant="primary">
+            <div>
+                <Paragraph>You are using Vencord Extended, an unofficial fork of Vencord. Vencord does not provide support for it.</Paragraph>
+                <Paragraph className={Margins.top8}>
+                    Please do not ask for help here. Report issues to <Link href={`https://github.com/${gitRemote}/issues`}>the Vencord Extended repository</Link> instead.
+                </Paragraph>
+            </div>
+        </ConfirmModal>
+    ));
+    return true;
+}
+
 async function generateDebugInfoMessage() {
     const { RELEASE_CHANNEL } = window.GLOBAL_ENV;
 
@@ -83,8 +99,9 @@ async function generateDebugInfoMessage() {
     })();
 
     const info = {
-        Vencord:
-            `v${VERSION} • [${gitHash}](<https://github.com/Vendicated/Vencord/commit/${gitHash}>)` +
+        // vencord-extended: 非公式 fork であることと、fork 側のコミットを示す
+        "Vencord Extended (unofficial fork)":
+            `v${VERSION} • [${gitHash}](<https://github.com/${gitRemote}/commit/${gitHash}>)` +
             `${SettingsPlugin.additionalInfo} - ${Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(BUILD_TIMESTAMP)}`,
         Client: `${RELEASE_CHANNEL} ~ ${client}`,
         Platform: navigator.platform
@@ -201,6 +218,8 @@ export default definePlugin({
 
             const selfId = UserStore.getCurrentUser()?.id;
             if (!selfId || isPluginDev(selfId)) return;
+
+            if (showForkWarning()) return; // vencord-extended
 
             if (!IS_UPDATER_DISABLED) {
                 await checkForUpdatesOnce().catch(() => { });
