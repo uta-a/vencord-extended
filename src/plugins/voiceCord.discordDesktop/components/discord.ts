@@ -27,8 +27,22 @@ export const DiscordText: ComponentType<{
     children?: ReactNode;
 }> = findComponentByCodeLazy("tabularNumbers:", "selectable:");
 
+// 純正サウンドボードの検索欄と同じ SearchBar（虫眼鏡付き。onClear を渡すとクリアボタンが出る）
+export const DiscordSearchBar: ComponentType<{
+    query: string;
+    onChange: (query: string) => void;
+    onClear?: () => void;
+    placeholder?: string;
+    autoFocus?: boolean;
+    size?: "sm" | "md";
+    "aria-label"?: string;
+}> = findComponentByCodeLazy('role:"searchbox"', "clearable:null!=");
+
 // CSS モジュールは書き出しのキーが短縮されているので、クラス名の接頭辞で引く
 export const PanelClasses = findCssClassesLazy("voiceUsers", "actionButtons", "button", "buttonColor", "buttonContents", "buttonIcon", "greyButtonActive");
 export const PickerClasses = findCssClassesLazy("picker", "inExpressionPicker");
 export const SectionClasses = findCssClassesLazy("sectionContainer", "sectionHeader", "sectionHeaderContent", "sectionTitle", "soundRow");
-export const SoundClasses = findCssClassesLazy("soundButtonWrapper", "soundButton", "soundButtonInteractive", "playing", "soundInfo", "soundName");
+export const SoundClasses = findCssClassesLazy(
+    "soundButtonWrapper", "soundButton", "soundButtonInteractive", "playing", "soundInfo", "soundName",
+    "buttonOverlay", "buttonOverlayBackground", "buttonOverlayActions", "secondaryButton", "secondaryIcon", "primaryIcon"
+);
