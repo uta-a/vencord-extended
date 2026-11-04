@@ -1,3 +1,18 @@
+<!-- vencord-extended: fork の告知。以下は upstream の README をそのまま残す -->
+# Vencord Extended
+
+> [!WARNING]
+> **これは Vencord の非公式 fork です。不具合は Vencord 公式ではなく [uta-a/vencord-extended の Issues](https://github.com/uta-a/vencord-extended/issues) に報告してください。**
+> This is an **unofficial fork** of Vencord. Do not ask Vencord for support; report issues to [uta-a/vencord-extended](https://github.com/uta-a/vencord-extended/issues).
+
+Vencord に音声注入プラグイン VoiceCord を同梱した、Windows 向けの Discord クライアント mod です。設計は [docs/vencord-extended-design.md](docs/vencord-extended-design.md) を参照してください。
+
+- 非公式のクライアント改変です。Discord の利用規約やアカウントへの影響は、利用者自身で確認してください
+- ライセンスは upstream と同じ GPL-3.0-or-later です
+- upstream の変更箇所は [FORK_CHANGES.md](FORK_CHANGES.md) にまとめています
+
+---
+
 # Vencord
 
 ![](https://img.shields.io/github/package-json/v/Vendicated/Vencord?style=for-the-badge&logo=github&logoColor=d3869b&label=&color=1d2021&labelColor=282828)

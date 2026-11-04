@@ -9,4 +9,5 @@ import gitRemote from "~git-remote";
 
 export { gitHash, gitRemote };
 
-export const VENCORD_USER_AGENT = `Vencord/${gitHash}${gitRemote ? ` (https://github.com/${gitRemote})` : ""}`;
+// vencord-extended: 非公式 fork であることを User-Agent で名乗る
+export const VENCORD_USER_AGENT = `VencordExtended/${gitHash}${gitRemote ? ` (https://github.com/${gitRemote})` : ""}`;

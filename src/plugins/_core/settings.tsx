@@ -170,8 +170,9 @@ export default definePlugin({
         const vencordEntries: SettingsLayoutNode[] = [
             buildEntry({
                 key: "vencord_main",
-                title: "Vencord",
-                panelTitle: "Vencord Settings",
+                // vencord-extended: ブランド表記（キーは互換のため変えない）
+                title: "Vencord Extended",
+                panelTitle: "Vencord Extended Settings",
                 Component: VencordTab,
                 Icon: MainSettingsIcon
             }),
@@ -231,7 +232,7 @@ export default definePlugin({
         const vencordSection: SettingsLayoutNode = {
             key: "vencord_section",
             type: LayoutTypes.SECTION,
-            useTitle: () => "Vencord Settings",
+            useTitle: () => "Vencord Extended Settings", // vencord-extended: ブランド表記
             buildLayout: () => vencordEntries
         };
 

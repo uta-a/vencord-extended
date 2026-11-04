@@ -1,0 +1,109 @@
+name: Upstream sync
+# 毎日 Vendicated/Vencord の main を取り込み、テストが通れば PR を作る。衝突やテスト失敗は issue にする。
+# rebase はしない（公開履歴を書き換えない）。
+#
+# upstream が .github/workflows/ を変更すると、既定の GITHUB_TOKEN ではブランチを push できない。
+# その場合に備えて、workflow 権限付きの PAT を secret の SYNC_TOKEN に置いておくと、そちらを使う。
+on:
+    schedule:
+        - cron: "17 3 * * *"
+    workflow_dispatch:
+
+permissions:
+    contents: write
+    pull-requests: write
+    issues: write
+
+concurrency:
+    group: upstream-sync
+
+env:
+    FORCE_COLOR: true
+    SYNC_BRANCH: sync/upstream
+    GH_TOKEN: ${{ secrets.SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+
+jobs:
+    Sync:
+        if: github.repository != 'Vendicated/Vencord'
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  ref: main
+                  fetch-depth: 0
+                  token: ${{ secrets.SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+
+            - name: Merge upstream
+              id: merge
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git remote add upstream https://github.com/Vendicated/Vencord.git
+                  git fetch --no-tags upstream main
+
+                  UPSTREAM_SHA=$(git rev-parse --short upstream/main)
+                  echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
+
+                  if git merge-base --is-ancestor upstream/main HEAD; then
+                      echo "取り込む変更はありません"
+                      echo "result=uptodate" >> "$GITHUB_OUTPUT"
+                      exit 0
+                  fi
+
+                  git switch -c "$SYNC_BRANCH"
+                  if git merge --no-edit -m "chore: upstream（Vendicated/Vencord）の $UPSTREAM_SHA を取り込む" upstream/main; then
+                      echo "result=merged" >> "$GITHUB_OUTPUT"
+                  else
+                      git diff --name-only --diff-filter=U > conflicts.txt
+                      git merge --abort
+                      echo "result=conflict" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Setup pnpm
+              if: steps.merge.outputs.result == 'merged'
+              uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+            - name: Use Node.js
+              if: steps.merge.outputs.result == 'merged'
+              uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+              with:
+                  node-version: 24
+                  cache: "pnpm"
+
+            - name: Test
+              id: test
+              if: steps.merge.outputs.result == 'merged'
+              continue-on-error: true
+              run: |
+                  pnpm install --frozen-lockfile
+                  pnpm test
+                  pnpm test:installer
+                  node scripts/checkForkChanges.mjs upstream/main
+
+            - name: Open or update PR
+              if: steps.merge.outputs.result == 'merged' && steps.test.outcome == 'success'
+              run: |
+                  git push --force origin "$SYNC_BRANCH"
+                  if [ -z "$(gh pr list --head "$SYNC_BRANCH" --state open --json number --jq '.[].number')" ]; then
+                      gh pr create --base main --head "$SYNC_BRANCH" \
+                          --title "chore: upstream（Vendicated/Vencord）を取り込む" \
+                          --body "upstream の \`${{ steps.merge.outputs.upstream_sha }}\` までを merge しました。CI（pnpm test、インストーラのテスト、FORK_CHANGES.md の検査）は通っています。"
+                  fi
+
+            - name: Report failure
+              if: steps.merge.outputs.result == 'conflict' || (steps.merge.outputs.result == 'merged' && steps.test.outcome != 'success')
+              run: |
+                  RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+                  SHA="${{ steps.merge.outputs.upstream_sha }}"
+                  if [ "${{ steps.merge.outputs.result }}" = "conflict" ]; then
+                      TITLE="upstream の取り込みで衝突（$SHA）"
+                      BODY=$(printf 'upstream の `%s` を merge すると衝突します。\n\n衝突したファイル:\n%s\n\n実行ログ: %s' "$SHA" "$(sed 's/^/- `/; s/$/`/' conflicts.txt)" "$RUN_URL")
+                  else
+                      TITLE="upstream の取り込み後にテストが失敗（$SHA）"
+                      BODY=$(printf 'upstream の `%s` を merge したブランチでテストが失敗しました。\n\n実行ログ: %s' "$SHA" "$RUN_URL")
+                  fi
+                  # 同じ upstream の版で issue を重ねて立てない
+                  if [ -z "$(gh issue list --state open --search "in:title $SHA" --json number --jq '.[].number')" ]; then
+                      gh issue create --title "$TITLE" --body "$BODY"
+                  fi
