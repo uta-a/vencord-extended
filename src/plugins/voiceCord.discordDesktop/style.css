@@ -1,30 +1,25 @@
-.vc-voicecord-popout {
-    width: 360px;
-    max-height: 420px;
+/* 見た目は Discord の部品とクラスに任せ、ここでは寸法と並べ方だけを決める */
+
+/* 純正サウンドボードのポップアウトと同じ幅。高さは純正の 520px を上限に中身に合わせる */
+.vc-voicecord-picker {
+    width: 531px;
+    height: auto;
+    max-height: 520px;
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 12px;
-    border-radius: 8px;
-    background: var(--background-surface-higher, var(--background-floating));
-    border: 1px solid var(--border-subtle);
-    box-shadow: var(--shadow-high);
-    color: var(--text-default, var(--text-normal));
+    padding: 12px 0 0;
 }
 
 .vc-voicecord-header {
     display: flex;
     align-items: center;
     gap: 8px;
-}
-
-.vc-voicecord-title {
-    font-weight: 600;
+    padding: 0 16px;
 }
 
 .vc-voicecord-state {
     flex: 1;
-    font-size: 12px;
     color: var(--text-muted);
 }
 
@@ -32,6 +27,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
+    flex-shrink: 0;
     background: var(--text-muted);
 }
 
@@ -47,53 +43,21 @@
     background: var(--status-danger);
 }
 
-.vc-voicecord-stop {
-    padding: 4px 10px;
-    border-radius: 4px;
-    background: var(--button-danger-background, var(--status-danger));
-    color: var(--white);
-    font-size: 12px;
-}
-
-.vc-voicecord-stop:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
 .vc-voicecord-problem {
-    font-size: 12px;
+    padding: 0 12px;
     color: var(--text-feedback-critical, var(--status-danger));
 }
 
 .vc-voicecord-empty {
-    font-size: 13px;
+    padding: 0 16px 12px;
     color: var(--text-muted);
 }
 
-.vc-voicecord-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-    overflow-y: auto;
-}
-
-.vc-voicecord-tile {
-    padding: 8px 6px;
-    border-radius: 6px;
-    background: var(--background-mod-normal, var(--background-modifier-hover));
-    color: inherit;
-    font-size: 13px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.vc-voicecord-tile:hover {
-    background: var(--background-mod-strong, var(--background-modifier-active));
-}
-
-.vc-voicecord-panel-wrapper {
-    display: flex;
+/* 純正と同じく、中身の幅を約 475px にする */
+.vc-voicecord-scroller {
+    flex: 1;
+    min-height: 0;
+    padding: 0 24px 16px 28px;
 }
 
 .vc-voicecord-fab-wrapper {
@@ -107,10 +71,5 @@
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--brand-500, var(--brand-experiment));
-    color: var(--white);
     box-shadow: var(--shadow-high);
 }

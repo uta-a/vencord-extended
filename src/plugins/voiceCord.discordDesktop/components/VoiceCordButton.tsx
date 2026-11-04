@@ -6,16 +6,13 @@
 
 import { markButtonSeen } from "@plugins/voiceCord.discordDesktop/state";
 import { classes } from "@utils/misc";
-import { findCssClassesLazy } from "@webpack";
 import { Popout, Tooltip, useEffect, useRef, useState } from "@webpack/common";
 
+import { DiscordButton, PanelClasses } from "./discord";
 import { SoundIcon } from "./icons";
 import { SoundboardPopout } from "./SoundboardPopout";
 
-// 音声パネルのボタン列の CSS。キーは短縮されているので、クラス名の接頭辞で引く
-const PanelClasses = findCssClassesLazy("voiceUsers", "actionButtons", "button", "buttonColor", "buttonContents", "buttonIcon", "greyButtonActive");
-
-// 純正サウンドボードボタンの隣に差し込むボタン。押すとポップアウトを開く
+// 純正サウンドボードボタンの隣に差し込むボタン。純正と同じ Button と props で描く
 export function VoiceCordButton() {
     const ref = useRef<HTMLDivElement>(null);
     const [show, setShow] = useState(false);
@@ -32,19 +29,22 @@ export function VoiceCordButton() {
             renderPopout={() => <SoundboardPopout />}
         >
             {() => (
-                <div ref={ref} className="vc-voicecord-panel-wrapper">
+                <div ref={ref}>
                     <Tooltip text="VoiceCord" shouldShow={!show}>
                         {tooltipProps => (
-                            <button
+                            <DiscordButton
                                 {...tooltipProps}
                                 aria-label="VoiceCord"
-                                className={classes(PanelClasses.button, PanelClasses.buttonColor, show && PanelClasses.greyButtonActive, "vc-voicecord-panel-button")}
+                                aria-expanded={show}
+                                className={classes(PanelClasses.button, PanelClasses.buttonColor, show && PanelClasses.greyButtonActive)}
+                                wrapperClassName={PanelClasses.button}
+                                innerClassName={PanelClasses.buttonContents}
+                                fullWidth
+                                size={DiscordButton.Sizes.MEDIUM}
                                 onClick={() => setShow(v => !v)}
                             >
-                                <div className={PanelClasses.buttonContents}>
-                                    <SoundIcon className={PanelClasses.buttonIcon} />
-                                </div>
-                            </button>
+                                <SoundIcon className={PanelClasses.buttonIcon} size={20} />
+                            </DiscordButton>
                         )}
                     </Tooltip>
                 </div>

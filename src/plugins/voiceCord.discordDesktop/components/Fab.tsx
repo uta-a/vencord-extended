@@ -9,6 +9,7 @@ import { onButtonSeen, state } from "@plugins/voiceCord.discordDesktop/state";
 import { createRoot, Popout, SelectedChannelStore, Tooltip, useEffect, useRef, useState, useStateFromStores } from "@webpack/common";
 import type { Root } from "react-dom/client";
 
+import { DiscordButton } from "./discord";
 import { SoundIcon } from "./icons";
 import { SoundboardPopout } from "./SoundboardPopout";
 
@@ -48,9 +49,16 @@ function Fab() {
                 <div ref={ref} className="vc-voicecord-fab-wrapper">
                     <Tooltip text={BROKEN_TEXT} shouldShow={!show}>
                         {tooltipProps => (
-                            <button {...tooltipProps} aria-label="VoiceCord" className="vc-voicecord-fab" onClick={() => setShow(v => !v)}>
+                            <DiscordButton
+                                {...tooltipProps}
+                                aria-label="VoiceCord"
+                                className="vc-voicecord-fab"
+                                size={DiscordButton.Sizes.ICON}
+                                color={DiscordButton.Colors.BRAND}
+                                onClick={() => setShow(v => !v)}
+                            >
                                 <SoundIcon size={24} />
-                            </button>
+                            </DiscordButton>
                         )}
                     </Tooltip>
                 </div>
