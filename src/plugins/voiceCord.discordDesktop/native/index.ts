@@ -24,16 +24,17 @@ import fs from "fs";
 import path from "path";
 
 import { type ConfigStore, createConfigStore, defaultConfig, defaultSoundsFolder } from "../../../voicecord/shared/config";
-import type { VoiceCordStatus } from "../../../voicecord/shared/ipc";
+import type { VoiceCordEvent, VoiceCordStatus } from "../../../voicecord/shared/ipc";
 import { voiceCordPaths } from "../../../voicecord/shared/paths";
 import { isSoundboardSoundId } from "../../../voicecord/shared/soundboard";
 import type { AppConfig, InjectPlayReq, LoadedConfig, SoundItem } from "../../../voicecord/shared/types";
 import { createEngineHost, type EngineHost, type EngineProcessLike } from "./engineHost";
+import { createEventQueue, type NextResult } from "./eventQueue";
 import { guessBranch, locateInstall } from "./locate";
 import { createSoundboardCache, resolveReadableSoundPath, type SoundboardCache } from "./soundboardCache";
 import { scanFolder, type SoundsFs } from "./soundsFs";
 import { runSubsystems, type Subsystem, type SubsystemLog, summarize } from "./subsystems";
-import { nextVcActive, vcActiveForState } from "./vcStatus";
+import { nextPlaying, nextVcActive, vcActiveForState } from "./vcStatus";
 
 const PLUGIN_NAME = "VoiceCord";
 
@@ -79,8 +80,16 @@ const status: VoiceCordStatus = {
     discordVersion: install?.version ?? "unknown",
     lastError: null,
     degraded: [],
-    vcActive: false
+    vcActive: false,
+    playing: []
 };
+
+// main から renderer への通知。renderer は nextEvents(cursor) で取りに来る
+const events = createEventQueue<VoiceCordEvent>({ max: 500, waitMs: 25_000 });
+
+function pushStatus() {
+    events.push({ ev: "status", status: { ...status, degraded: [...status.degraded], playing: [...status.playing] } });
+}
 
 let started = false;
 let config: ConfigStore | null = null;
@@ -132,10 +141,16 @@ function start() {
                         serviceName: "VoiceCord engine"
                     }) as unknown as EngineProcessLike,
                     emit: e => {
-                        // vc は変化したときしか来ない。UI を再読み込みしても在席を返せるよう覚えておく
-                        status.vcActive = nextVcActive(status.vcActive, e);
-                        // M2 で long-poll（nextEvents）へ流す。今は main のログにだけ出す
+                        // vc は変化したときしか来ない。UI を再読み込みしても在席と再生中を返せるよう覚えておく
+                        const vcActive = nextVcActive(status.vcActive, e);
+                        const playing = nextPlaying(status.playing, e);
                         if (e.ev === "log") log.info(`engine ${e.level}: ${e.message}`);
+                        events.push(e);
+                        if (vcActive !== status.vcActive || playing !== status.playing) {
+                            status.vcActive = vcActive;
+                            status.playing = playing;
+                            pushStatus();
+                        }
                     },
                     onState: (state, attachedPid, error, rate) => {
                         status.engine = state;
@@ -146,6 +161,7 @@ function start() {
                         status.frameSamples = rate.frameSamples;
                         status.enginePid = host.pid();
                         status.lastError = error;
+                        pushStatus();
                     },
                     setTimer: (fn, ms) => setTimeout(fn, ms),
                     clearTimer: h => clearTimeout(h as NodeJS.Timeout),
@@ -172,6 +188,7 @@ function start() {
         status.engine = "failed";
         status.lastError = engineFailure.error;
     }
+    pushStatus();
 }
 
 function stopEverything() {
@@ -186,6 +203,8 @@ function stopEverything() {
     status.attachedPid = null;
     status.enginePid = null;
     status.vcActive = false;
+    status.playing = [];
+    pushStatus();
 }
 
 /** 起動時の自動開始。トップレベルでは何も起こさない */
@@ -243,6 +262,16 @@ export function shutdown(_: IpcMainInvokeEvent) {
 
 export function getStatus(_: IpcMainInvokeEvent): VoiceCordStatus {
     return status;
+}
+
+/** main からの通知を long-poll で受け取る。cursor が null か古すぎれば reset を返すので、getStatus で取り直す */
+export function nextEvents(e: IpcMainInvokeEvent, cursor: unknown): Promise<NextResult<VoiceCordEvent>> {
+    return events.next(typeof cursor === "number" ? cursor : null, gone => e.sender.once("destroyed", gone));
+}
+
+function setPlaying(playing: string[]) {
+    status.playing = playing;
+    pushStatus();
 }
 
 export function getConfig(_: IpcMainInvokeEvent): LoadedConfig {
@@ -309,7 +338,7 @@ export function preloadPcm(_: IpcMainInvokeEvent, srcId: unknown, fp: unknown, s
     );
 }
 
-export function play(_: IpcMainInvokeEvent, req: unknown) {
+export async function play(_: IpcMainInvokeEvent, req: unknown) {
     if (typeof req !== "object" || req === null) throw new Error("再生要求の形が想定と違います");
     const r = req as Record<string, unknown>;
     const clean: InjectPlayReq = {
@@ -320,15 +349,20 @@ export function play(_: IpcMainInvokeEvent, req: unknown) {
         vol: finite(r.vol, "音量", 0, 1.5),
         sampleRate: finite(r.sampleRate, "注入レート", 8000, 192000)
     };
-    return engineRequest("voicecord:play", [clean]);
+    const voiceId = await engineRequest("voicecord:play", [clean]);
+    if (typeof voiceId === "string") setPlaying([...status.playing, voiceId]);
+    return voiceId;
 }
 
-export function stop(_: IpcMainInvokeEvent, voiceId: unknown) {
-    return engineRequest("voicecord:stop", [str(voiceId, "再生 ID")]);
+export async function stop(_: IpcMainInvokeEvent, voiceId: unknown) {
+    const id = str(voiceId, "再生 ID");
+    await engineRequest("voicecord:stop", [id]);
+    setPlaying(status.playing.filter(v => v !== id));
 }
 
-export function stopAll(_: IpcMainInvokeEvent) {
-    return engineRequest("voicecord:stopAll", []);
+export async function stopAll(_: IpcMainInvokeEvent) {
+    await engineRequest("voicecord:stopAll", []);
+    setPlaying([]);
 }
 
 export function setVoiceVolume(_: IpcMainInvokeEvent, voiceId: unknown, vol: unknown) {
