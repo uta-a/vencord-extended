@@ -53,7 +53,7 @@ vencord-extended は Vencord を fork し、voicecord-module の音声注入機�
 | ディレクトリ | 動く場所 | 役割 | vencord-extended での扱い |
 | --- | --- | --- | --- |
 | `src/agent/hook.js` | 注入先 renderer（frida） | Krisp 出力へのミックス注入 | 変更なし |
-| `src/engine` | utilityProcess の子 | 注入先の探索、hook 注入、再アタッチ監視 | ほぼそのまま。別バンドル `engine.js` |
+| `src/engine` | utilityProcess の子 | 注入先の探索、hook 注入、再アタッチ監視 | ほぼそのまま。別バンドル `engine.mjs` |
 | `src/shared` | 両側 | 型、設定、音量計算、パス | そのまま共有 |
 | `src/patcher` | Discord main | 設定、音源走査、サウンドボードのキャッシュ、エンジン起動、IPC、preload 登録 | プラグイン native へ移植。preload 登録と `voicecord:*` チャンネルは廃止 |
 | `src/preload` | isolated world | `window.api`、PCM デコード、DOM 接ぎ木、FAB、キーボード | API とデコードは renderer プラグインへ。接ぎ木は廃止し、FAB は予備として残す |
@@ -71,7 +71,7 @@ vencord-extended は Vencord を fork し、voicecord-module の音声注入機�
 | --- | --- | --- | --- |
 | A. 別モジュール同梱 | Vencord の patcher から現行の voicecord patcher.js / preload.js を require する | 移植量がほぼ 0 | preload と UI が 2 系統のまま。Vencord の設定に出ず、DOM 接ぎ木の脆さも残る。fork する意味が薄い |
 | **B. 組み込みプラグイン（採用）** | main 側はプラグイン native、エンジンは別バンドル、UI は Vencord プラグイン | Vencord の設定画面・webpack パッチ・更新機構をそのまま使える。プラグインのオンオフも可能 | UI の書き換え量が多い（store 以外の部品） |
-| C. fork しない userplugin | 公式 Vencord に入れる userplugin として配布する | fork の保守が不要 | engine.js と frida ランタイムを userplugin のビルドで配置できない。導入には利用者自身のソースビルドが必要 |
+| C. fork しない userplugin | 公式 Vencord に入れる userplugin として配布する | fork の保守が不要 | engine.mjs と frida ランタイムを userplugin のビルドで配置できない。導入には利用者自身のソースビルドが必要 |
 
 B を選ぶ理由:
 
@@ -108,7 +108,7 @@ vencord-extended/
 │  ├─ engine/          engine, supervisor, injector, transmit, core
 │  ├─ agent/hook.js    frida エージェント（変更なし）
 │  └─ shared/          types, engineMsg, config, loudness, paths, status
-├─ scripts/build/voicecord.mjs              engine.js / hook.js / frida ランタイムの生成
+├─ scripts/build/voicecord.mjs              engine.mjs / hook.js / frida ランタイムの生成
 ├─ installer/                               VoiceCord Manager 由来のインストーラ
 ├─ test/voicecord/                          移植した Vitest
 └─ FORK_CHANGES.md                          コア改変の一覧（CI で検査）
@@ -121,7 +121,7 @@ vencord-extended/
 | `scripts/build/build.mjs` | VoiceCord のビルド対象を追加。無効化フラグ付き |
 | `src/main/updater/common.ts` ほか更新処理 | ランタイムの版確認と取得を追加（`VENCORD_FILES` は 4 つのまま） |
 | `package.json` | frida の依存、版表記（`-ext.<連番>`） |
-| `pnpm-workspace.yaml` | `onlyBuiltDependencies` に frida を追加 |
+| `pnpm-workspace.yaml` | `allowBuilds` に frida を追加 |
 | ブランド表記（設定画面の見出し、User-Agent） | 「Vencord Extended」にする。`Vencord` / `VencordNative` などの識別子は互換のため変えない |
 | `supportHelper`、README | 非公式 fork であること、Vencord 公式に報告しないことを明記 |
 
@@ -146,10 +146,11 @@ native モジュールは patcher.js に束ねられ、Discord の起動直後�
 
 | 名前 | 内容 | 失敗時 |
 | --- | --- | --- |
-| state | 「mod が最後に動いた日時」を記録。インストーラがパッチ外れの判定に使う | degraded に積む |
 | config | 音源フォルダ、音源別音量、校正値、入場サウンドの保存。既定フォルダは自動作成 | 設定 API が理由付きで throw |
-| engine | `utilityProcess.fork(<dist>/voicecord/engine.js)`。frida はこの子の中だけで読む | status.engine = failed |
+| engine | `utilityProcess.fork(<dist>/voicecord/engine.mjs)`。frida はこの子の中だけで読む | status.engine = failed |
 | ipc | native 関数の実体。フォルダ外のファイル読み取りを拒否する制限も維持 | 該当 API が理由付きで throw |
+
+旧 patcher の state（「mod が最後に動いた日時」の記録）は移植していません。Discord の更新後の再パッチは Vencord が行うので、パッチ外れの判定が必要になったら足します。ipc は native の export そのものになり、ほかのサーバーのサウンドのキャッシュは soundboard として独立させました。
 
 `runSubsystems` の「1 つが落ちても他は動かす」方針、失敗を `status.degraded` で UI に返す方針はそのままです。
 
@@ -163,7 +164,7 @@ native モジュールは patcher.js に束ねられ、Discord の起動直後�
 
 ### エンジンと frida の配置
 
-- `engine.js` は frida を external にした CJS バンドル。frida は `bindings` が `package.json` と `build/` を辿るため、束ねずに `<dist>/voicecord/node_modules/frida` に置く
+- `engine.mjs` は frida を external にした ESM バンドル（utilityProcess の子として Node のローダに読ませる。移植元と同じ形）。frida は `bindings` が `package.json` と `build/` を辿るため、束ねずに `<dist>/voicecord/node_modules/frida` に置く
 - hook.js と注入先の探索（自分と親が同じ renderer、不合格に期限を付ける処理）は変更しない
 - 注入レートは hook が実測する。実測値は Canary 1.0.1169 で 32 kHz / 320 サンプル、Stable 1.0.9257 で 48 kHz / 480 サンプル。固定値を前提にしない
 - `before-quit` でエンジンを止める。子側は parentPort の close でもゲートを戻す
@@ -180,9 +181,9 @@ native 関数は第 1 引数に `IpcMainInvokeEvent` を受け取ります。そ
 | --- | --- | --- |
 | `getStatus` / `subscribe` | `getStatus()` / `nextEvents(cursor)` | getStatus は再生中の一覧も返す。subscribe は long-poll の nextEvents に置き換える |
 | `getConfig` / `saveConfig` | `getConfig()` / `saveConfig(partial)` | 保存失敗は reject で返し、UI で通知 |
-| `scanFolder` / `chooseFolder` / `readSoundFile` | 同名 | readSoundFile は ArrayBuffer を切り出して返す |
+| `scanFolder` / `chooseFolder` / `readSoundFile` | `scanSoundFolder()` / 同名 / 同名 | readSoundFile は ArrayBuffer を切り出して返す |
 | `fetchSoundboardSound` | 同名 | CDN 取得は main 側のまま（renderer の CSP を避ける） |
-| `preload` | `preloadPcm(sourceId, sampleRate, pcm)` | Float32Array をそのまま渡す。PCM 自身のレートを必ず添える |
+| `preload` | `preloadPcm(sourceId, fp, sampleRate, pcm)` | PCM は ArrayBuffer で渡す（utilityProcess へは transfer できないので複製）。PCM 自身のレートと内容指紋を必ず添える |
 | `play` / `stop` / `stopAll` / `setVoiceVolume` / `setMaster` / `openGate` | 同名 | エンジンへそのまま中継 |
 | `calibStart` / `calibStop` | 同名 | 音量校正 |
 | `reattach` / `detach` | 同名 | 手動リトライ用 |
@@ -255,10 +256,10 @@ UI は Vencord プラグインとしてメインワールドで動かし、Disco
 
 ### ビルド
 
-- `scripts/build/voicecord.mjs` を `build.mjs` から呼ぶ。`--no-voicecord` または win32 以外では飛ばす
-- 成果物は `dist/voicecord/engine.js`（node20 / cjs、frida は external）、`dist/voicecord/hook.js`、`dist/voicecord/node_modules/`（frida の `package.json` と `build/`、および bindings 系の依存 5 つ）
+- `scripts/build/voicecord.mjs` を `build.mjs` から呼ぶ。`--no-voicecord` で全部飛ばす。engine.mjs と hook.js はどの OS でもビルドし（CI で束ね方の誤りに気付くため）、frida ランタイムは Windows で frida が入っているときだけ配る
+- 成果物は `dist/voicecord/engine.mjs`（node20 / esm、frida は external）、`dist/voicecord/hook.js`、`dist/voicecord/node_modules/`（frida の `package.json` と `build/`、および bindings 系の依存 5 つ）
 - コピーは現行の `copyIfChanged` を流用する。frida のバイナリは約 75 MB あるため、変わったときだけコピーする
-- Vencord は pnpm を使う。frida の prebuild を通すため、`pnpm-workspace.yaml` の `onlyBuiltDependencies` に frida を足す
+- Vencord は pnpm を使う。frida の prebuild を通すため、`pnpm-workspace.yaml` の `allowBuilds` に frida を足す。frida は optionalDependencies に置き、Windows 以外で取得に失敗してもインストール全体を止めない。実行時依存は pnpm のリンク構造に依らず require の解決で辿る
 - `buildWeb`（拡張機能版）では `.discordDesktop` の規約により自動で除外される。それを CI で確認する
 
 ### リリース物
@@ -312,7 +313,7 @@ Vencord の更新は「upstream/main を main へ merge する」形で取り込
 | 障害 | 振る舞い |
 | --- | --- |
 | native の初期化が throw | try/catch で握る。patcher.js の続き（Discord のブート）は必ず走る |
-| engine.js や frida ランタイムがない・壊れている | status.engine = failed。UI は理由を表示し、更新時にランタイムを取り直す |
+| engine.mjs や frida ランタイムがない・壊れている | status.engine = failed。UI は理由を表示し、更新時にランタイムを取り直す |
 | エンジンが異常終了 | utilityProcess なので Discord は生き残る。バックオフ付きで再起動する。hook は parentPort の close でゲートを戻し、注入音が残らない |
 | Krisp の export が見つからない | searching のまま待機し、「Krisp を有効にして」と表示する |
 | ボタンのパッチが当たらない | 予備の FAB を出し、理由を表示する。他のパッチの成否には影響しない |
@@ -362,7 +363,7 @@ Vencord の更新は「upstream/main を main へ merge する」形で取り込
 | 段階 | 内容 | 完了条件 |
 | --- | --- | --- |
 | M0 fork と土台 | fork、CI、upstream の自動取り込み、ブランド表記、インストーラの注入方式変更 | 自前のインストーラで入れた「VoiceCord なし」のビルドが Canary で動き、更新元が uta-a/vencord-extended になっている |
-| M1 main 側の移植 | native、engine.js、hook.js、frida ランタイムのビルドと配置 | DevTools から `pluginHelpers` を呼んで再生した音を、別アカウントで受信できる |
+| M1 main 側の移植 | native、engine.mjs、hook.js、frida ランタイムのビルドと配置 | DevTools から `pluginHelpers` を呼んで再生した音を、別アカウントで受信できる |
 | M2 通知と最小 UI | long-poll（`nextEvents`）、ボタンのパッチ、一覧・再生・停止だけのポップアウト、予備 FAB | VC 内のボタンから音源を選んで再生・全停止できる |
 | M3 全機能の UI | 音量、校正、モニター、入場サウンド、他サーバーのサウンド、設定画面、設定の移行 | v0.3.1 の全機能が動き、旧 config.json が引き継がれる |
 | M4 配布と更新 | リリースの自動化、ランタイムの更新、復旧手順書 | リリース物だけで導入・更新・解除・復旧ができる |
