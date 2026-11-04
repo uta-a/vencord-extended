@@ -181,6 +181,7 @@ function start() {
     ];
 
     const { failures } = summarize(runSubsystems(subsystems, log));
+    registerStopKey();
     status.degraded = failures;
     // エンジンが起動できなかったときだけ engine を failed にする。他の失敗は degraded で伝える
     const engineFailure = failures.find(f => f.name === "engine");
@@ -205,6 +206,24 @@ function stopEverything() {
     status.vcActive = false;
     status.playing = [];
     pushStatus();
+}
+
+// 緊急停止（Ctrl+Alt+Shift+X）。renderer が固まっていても止められるよう、main でもキーを受ける
+let stopKeyRegistered = false;
+function registerStopKey() {
+    if (stopKeyRegistered) return;
+    stopKeyRegistered = true;
+    const watch = (wc: Electron.WebContents) => wc.on("before-input-event", (_, input) => {
+        if (!started || input.type !== "keyDown" || !(input.control && input.alt && input.shift && input.code === "KeyX")) return;
+        engine?.request("voicecord:stopAll", [])
+            .then(() => {
+                status.playing = [];
+                pushStatus();
+            })
+            .catch(e => log.error("緊急停止に失敗しました", e));
+    });
+    for (const w of BrowserWindow.getAllWindows()) watch(w.webContents);
+    app.on("browser-window-created", (_, w) => watch(w.webContents));
 }
 
 /** 起動時の自動開始。トップレベルでは何も起こさない */
