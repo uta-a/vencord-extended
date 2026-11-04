@@ -32,6 +32,7 @@
         "lint:fix": "pnpm lint --fix",
         "test": "pnpm test:ts && pnpm buildStandalone && pnpm buildWebStandalone && pnpm lint && pnpm lint-styles && pnpm generatePluginJson",
         "test:ts": "tsc --noEmit",
+        "test:voicecord": "vitest run --dir test/voicecord",
         "test:installer": "tsc -p installer && node --import tsx --test \"installer/test/*.test.ts\"",
         "bump": "./scripts/bump.sh"
     },
@@ -76,10 +77,14 @@
         "typescript": "catalog:",
         "typescript-eslint": "catalog:",
         "typescript-transform-paths": "catalog:",
+        "vitest": "catalog:",
         "zip-local": "catalog:"
     },
     "packageManager": "pnpm@12.15.0",
     "engines": {
         "node": ">=22"
+    },
+    "optionalDependencies": {
+        "frida": "catalog:"
     }
 }
