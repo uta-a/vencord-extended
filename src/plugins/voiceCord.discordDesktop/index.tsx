@@ -13,6 +13,7 @@ import { createApi, type VoiceCordNative } from "./api";
 import { mountFab, unmountFab } from "./components/Fab";
 import { syncLevelModal } from "./components/LevelModal";
 import { VoiceCordButton } from "./components/VoiceCordButton";
+import { onSoundClick, renderHeaderAccessories, watchSoundboardStyles, watchVoiceChannel } from "./discordIntegration";
 import { setEngineStatus } from "./engineStatus";
 import { needApi, state } from "./state";
 import { bindApi, resetStore, store } from "./store";
@@ -48,10 +49,29 @@ export default definePlugin({
                 match: /\{channel:(\i),focusProps:\i\}\):null(?=\]\})/,
                 replace: "$&,$self.renderPanelButton({channel:$1})"
             }
+        },
+        {
+            // 純正サウンドボードのタイル。ロックされた（ほかのサーバーの）サウンドのクリックを、設定が ON なら VoiceCord で鳴らす。
+            // 後読みでロックの判定（!canUseSound(...)）とサウンドの変数を拾い、onClick の先頭で分岐させる
+            find: /showLockForDisabledSound:\i=!0/,
+            replacement: {
+                match: /(?<=(\i)=!\(0,\i\.\i\)\(\i,(\i),\i\)&&!\i,.{0,2500}?)onClick:(\i)=>\{/,
+                replace: "onClick:$3=>{if($self.onSoundClick($3,$2,$1))return;"
+            }
+        },
+        {
+            // 純正サウンドボードのヘッダー。右端（音量アイコン）の前に、VoiceCord の停止ボタンを並べる
+            find: '"SoundboardSoundGrid"',
+            replacement: {
+                match: /renderHeaderAccessories:(\i),(?=rowHeight:48)/,
+                replace: "renderHeaderAccessories:()=>$self.renderHeaderAccessories($1),"
+            }
         }
     ],
 
     renderPanelButton: ErrorBoundary.wrap(VoiceCordButton, { noop: true }),
+    onSoundClick,
+    renderHeaderAccessories,
 
     async start() {
         const api = createApi(Native);
@@ -70,7 +90,9 @@ export default definePlugin({
                     if (s.notice.msg) showToast({ text: s.notice.msg });
                 }
                 syncLevelModal(s.levelOpen);
-            })
+            }),
+            watchSoundboardStyles(),
+            watchVoiceChannel()
         ];
         document.addEventListener("keydown", onKeyDown, true);
         mountFab();

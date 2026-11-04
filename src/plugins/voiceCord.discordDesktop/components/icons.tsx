@@ -24,6 +24,8 @@ function Lucide({ className, size = 16, children }: IconProps & { children: Reac
 export const SoundIcon = (p: IconProps) => <Lucide size={20} {...p}><path d="M2 10v3" /><path d="M6 6v11" /><path d="M10 3v18" /><path d="M14 8v7" /><path d="M18 5v13" /><path d="M22 10v3" /></Lucide>;
 export const PlayIcon = (p: IconProps) => <Lucide {...p}><polygon points="6 3 20 12 6 21 6 3" fill="currentColor" /></Lucide>;
 export const StopIcon = (p: IconProps) => <Lucide {...p}><rect width="14" height="14" x="5" y="5" rx="2" /></Lucide>;
+// 純正サウンドボードのヘッダーの塗りのアイコン（音量）に揃えた、塗りの停止アイコン
+export const FilledStopIcon = ({ className, size = 20 }: IconProps) => <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" /></svg>;
 export const HeadphonesIcon = (p: IconProps) => <Lucide {...p}><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3" /></Lucide>;
 export const SlidersIcon = (p: IconProps) => <Lucide {...p}><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4" /></Lucide>;
 export const CheckIcon = (p: IconProps) => <Lucide {...p}><path d="M20 6 9 17l-5-5" /></Lucide>;
