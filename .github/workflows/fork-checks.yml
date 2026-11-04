@@ -88,4 +88,4 @@ jobs:
             - name: Build and check VoiceCord runtime
               run: |
                   pnpm build --standalone
-                  node -e "for (const f of ['engine.mjs','hook.js','node_modules/frida/package.json']) require('fs').accessSync('dist/voicecord/' + f)"
+                  node scripts/checkVoiceCordRuntime.mjs
