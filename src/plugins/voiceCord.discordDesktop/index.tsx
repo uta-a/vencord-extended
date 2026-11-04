@@ -8,7 +8,7 @@ import { Logger } from "@utils/Logger";
 import definePlugin, { type PluginNative } from "@utils/types";
 
 import type { SoundItem } from "../../voicecord/shared/types";
-import { createOfflineDecoder, decodeToMono, PREVIEW_SAMPLE_RATE } from "./audio/decode";
+import { createOfflineDecoder, decodeToMono, isRawF32, PREVIEW_SAMPLE_RATE } from "./audio/decode";
 
 const Native = VencordNative.pluginHelpers.VoiceCord as PluginNative<typeof import("./native")>;
 const logger = new Logger("VoiceCord");
@@ -21,7 +21,8 @@ const logger = new Logger("VoiceCord");
  */
 async function decodeAndPlay(item: SoundItem, vol = 1) {
     const status = await Native.getStatus();
-    const sampleRate = status.sampleRate ?? PREVIEW_SAMPLE_RATE;
+    // 生の .f32 は 48kHz 固定で、decodeToMono はリサンプルしない。添えるレートも 48kHz にする
+    const sampleRate = isRawF32(item.name) ? PREVIEW_SAMPLE_RATE : (status.sampleRate ?? PREVIEW_SAMPLE_RATE);
     const bytes = await Native.readSoundFile(item.path);
     const pcm = await decodeToMono(bytes, item.name, createOfflineDecoder(sampleRate));
     // Float32Array の buffer がちょうどこの PCM だけを指すように切り出して送る
