@@ -235,21 +235,27 @@ UI は Vencord プラグインとしてメインワールドで動かし、Disco
 | 現行 | 移行先 |
 | --- | --- |
 | `#vc-root` への自前ポータル | Discord の `Popout`（`@webpack/common`）でボタンに紐付ける |
-| Radix（Dialog / Slider / Switch / Select / Tabs） | Vencord と Discord の `ModalRoot`、`Slider`、`Switch`、`Select`、`TabBar` |
-| Tailwind + shadcn の配色 | `style.css` に書き直し、Discord の CSS 変数を使う。ライトとオニキスにも自動で追従する |
-| sonner のトースト | Vencord の `showToast` |
-| zustand の store（1272 行） | ロジックは流用し、`zustand/vanilla`（React 非依存）で作る。React との接続は `@webpack/common` の `React.useSyncExternalStore` を包む自前の `useVoiceCord(selector)` で行う（`import "react"` を束ねると React が 2 つになるため）。`window.api` の参照は `api.ts` に差し替える |
-| lucide-react のアイコン | 使う分だけ SVG を同梱 |
+| ポップアウトの器・見出し・行・タイル | 純正サウンドボードのクラス（`picker` / `sectionHeader` / `soundRow` / `soundButton` と操作の帯）を `findCssClassesLazy` で引いて使う |
+| Radix の Dialog | Discord の新しい `Modal`（`@webpack/common`。タイトル・サブタイトル・下部のボタン付き） |
+| Radix の Slider / Select | Discord の `Slider` / `Select`。Slider は `markers` に下限・上限を必ず含める（含めないと範囲が崩れる） |
+| Radix の Switch | Vencord の `Switch` / `FormSwitch`（Discord のトグル本体は設定画面でしか読み込まれず、安定して引けない） |
+| shadcn の Button / Input | Discord の `Button`（`Looks` / `Colors` / `Sizes` を持つもの）と、純正サウンドボードと同じ `SearchBar` |
+| 文字 | Discord の `Text`（`variant` は `body-sm/semibold` など、画面で実際に使われているもの） |
+| Tailwind + shadcn の配色 | `style.css` は寸法と並べ方だけ。色は Discord の CSS 変数に任せる |
+| sonner のトースト | Discord の `showToast`（store の通知の連番を見て、同じ文言でも毎回出す） |
+| zustand の store（1272 行） | ロジックは流用し、`zustand/vanilla`（React 非依存）で作る。React との接続は `@webpack/common` の `React.useSyncExternalStore` を包む自前の `useVoiceCord(selector)` で行う（`import "react"` を束ねると React が 2 つになるため）。api は `bindApi` で受け取り、プラグインの stop で `resetStore` する |
+| lucide-react のアイコン | Vencord の `@components/Icons` にあるもの（歯車・フォルダ・再読込）は使い、無いものだけ SVG を同梱 |
 
 ### 機能ごとの対応
 
 | 機能（現行ファイル） | vencord-extended での実装 |
 | --- | --- |
-| 他サーバーのサウンドの解除（`lockedSounds.ts`） | DOM のクリック横取りではなく、サウンドボードのクリック処理を webpack パッチで分岐させる |
-| 純正サウンドボードの停止ボタン（`soundboardStop.ts`） | ポップアウトのヘッダーへパッチで挿入する |
-| カメラボタン非表示（`cameraButton.ts`） | 設定で切り替える CSS（Vencord の managed style） |
-| VC 在席の判定（`presence.ts`） | `SelectedChannelStore` / `RTCConnectionStore` と hook の vc イベントを併用する |
-| 入場サウンド | Vencord の `flux` で `VOICE_STATE_UPDATES` を購読する |
+| 他サーバーのサウンドの解除（`lockedSounds.ts`） | 純正タイルの `onClick` の先頭をパッチで分岐させる（find: `/showLockForDisabledSound:\i=!0/`。match は `canUseSound` の否定とサウンドの変数を後読みで拾う）。鍵と Nitro の誘導は html の印と CSS で隠す |
+| 純正サウンドボードの停止ボタン（`soundboardStop.ts`） | ヘッダーの `renderHeaderAccessories` をパッチで包み、音量アイコンの前に並べる（find: `"SoundboardSoundGrid"`） |
+| VoiceCord で鳴らしている純正サウンドの再生中の枠 | サウンド ID ごとのセレクタを生成し、純正の再生中と同じ緑の枠を CSS で付ける |
+| カメラボタン非表示（`cameraButton.ts`） | 設定で html に印を付け、VoiceCord のボタンがある列の先頭を CSS で隠す（パネルの関数には途中で return する分岐があるので、パッチでフックは使えない） |
+| VC 在席の判定（`presence.ts`） | `SelectedChannelStore` の変化を store へ渡し、hook の vc イベントと併用する |
+| 入場サウンド | store のロジックのまま（hook の gateInfo で Connection* の張り替えを検知して鳴らす。flux の購読より誤発火が少ない） |
 | 緊急停止 Ctrl+Alt+Shift+X（`keyboard.ts`） | renderer の keydown を維持。重ねて main 側の `before-input-event` でも捕まえる |
 | 設定画面 | ポップアウト内の設定に加え、Vencord のプラグイン設定モーダルにも状態表示と復旧操作を置く |
 
