@@ -23,6 +23,7 @@ import { readdir } from "fs/promises";
 import { join, resolve } from "path";
 
 import { BUILD_TIMESTAMP, commonOpts, exists, globPlugins, IS_DEV, IS_REPORTER, IS_ANTI_CRASH_TEST, IS_STANDALONE, IS_UPDATER_DISABLED, resolvePluginName, VERSION, commonRendererPlugins, watch, buildOrWatchAll, stringifyValues, getMonacoEditorCdnUrl } from "./common.mjs";
+import { copyVoiceCordRuntime, voiceCordBuildConfigs } from "./voicecord.mjs"; // vencord-extended
 
 const defines = stringifyValues({
     IS_STANDALONE,
@@ -217,5 +218,9 @@ const buildConfigs = ([
         }
     }
 ]);
+
+// vencord-extended: VoiceCord のエンジンと frida ランタイム（--no-voicecord で飛ばす）
+buildConfigs.push(...voiceCordBuildConfigs());
+copyVoiceCordRuntime();
 
 await buildOrWatchAll(buildConfigs);

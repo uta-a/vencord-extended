@@ -30,8 +30,38 @@ jobs:
             - name: Check FORK_CHANGES.md
               run: node scripts/checkForkChanges.mjs upstream/main
 
+    WebExclusion:
+        name: web 版に VoiceCord が入らないこと
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+            - name: Use Node.js
+              uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+              with:
+                  node-version: 24
+                  cache: "pnpm"
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Build web
+              run: pnpm buildWebStandalone
+
+            # 除外したプラグインの名前の一覧（ExcludedPlugins）には VoiceCord の名前だけが載るので、名前ではなく中身で調べる
+            - name: Check web builds
+              run: |
+                  if grep -l -E 'frida|voicecord:|ensureStarted|VencordPluginNative_VoiceCord' dist/extension.js dist/Vencord.user.js; then
+                      echo "web 版の成果物に VoiceCord のコードが含まれています"
+                      exit 1
+                  fi
+
     Installer:
-        name: インストーラのテスト
+        name: インストーラと VoiceCord のテスト
         runs-on: windows-latest
         steps:
             - name: Checkout repository
@@ -51,3 +81,11 @@ jobs:
 
             - name: Test installer
               run: pnpm test:installer
+
+            - name: Test VoiceCord
+              run: pnpm test:voicecord
+
+            - name: Build and check VoiceCord runtime
+              run: |
+                  pnpm build --standalone
+                  node scripts/checkVoiceCordRuntime.mjs

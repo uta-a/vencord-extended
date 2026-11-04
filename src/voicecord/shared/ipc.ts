@@ -1,0 +1,122 @@
+/*
+ * Vencord, a Discord client mod
+ * Copyright (c) 2026 uta-a
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
+/**
+ * main（patcher）と renderer（preload の isolated world）の間のチャンネル名。
+ *
+ * 名前空間は voicecord:。Discord は DISCORD_* / VOICE_*、Vencord は Vencord* を
+ * 使うので衝突しない。文字列を直書きせずここに集約し、両側で同じ定数を使う。
+ */
+
+import type { EngineEvent as RawEngineEvent } from "./types.js";
+
+export const CH = {
+  /** 設定の読み書き */
+  getConfig: "voicecord:getConfig",
+  saveConfig: "voicecord:saveConfig",
+
+  /** エンジン制御。attach は自動が既定なので reattach は手動リトライ用 */
+  reattach: "voicecord:reattach",
+  detach: "voicecord:detach",
+
+  /** サウンドフォルダ */
+  scanFolder: "voicecord:scanFolder",
+  chooseFolder: "voicecord:chooseFolder",
+  /** 生ファイルを ArrayBuffer で返す。folder 配下に限定する */
+  readSoundFile: "voicecord:readSoundFile",
+  /**
+   * ほかのサーバーのサウンドボード音声を CDN から取り、一時フォルダに置いてパスを返す。
+   * 置いたファイルは readSoundFile で読める（キャッシュ先直下の決まった名前に限る）
+   */
+  fetchSoundboardSound: "voicecord:fetchSoundboardSound",
+
+  /** renderer でデコードした PCM を engine へ渡す */
+  preloadPcm: "voicecord:preload",
+
+  /** 再生制御 */
+  play: "voicecord:play",
+  stop: "voicecord:stop",
+  stopAll: "voicecord:stopAll",
+  setVoiceVolume: "voicecord:setVoiceVolume",
+  setMaster: "voicecord:setMaster",
+  openGate: "voicecord:openGate",
+
+  /** 音量校正 */
+  calibStart: "voicecord:calibStart",
+  calibStop: "voicecord:calibStop",
+
+  /** 状態取得とイベント購読 */
+  getStatus: "voicecord:getStatus",
+  subscribe: "voicecord:subscribe",
+
+  /** main → renderer のプッシュ */
+  event: "voicecord:event"
+} as const;
+
+export type ChannelName = (typeof CH)[keyof typeof CH];
+
+/** invoke で呼べるチャンネル（event は push 専用なので含まない） */
+export const INVOKE_CHANNELS: readonly ChannelName[] = Object.entries(CH)
+  .filter(([k]) => k !== "event")
+  .map(([, v]) => v);
+
+/** エンジンの生死。FAB の色に対応する（可視化 2） */
+export type EngineState =
+  /** 起動中 */
+  | "starting"
+  /** 生きているが audio utility をまだ見つけていない（VC に入るまでは正常） */
+  | "searching"
+  /** attach 済み */
+  | "attached"
+  /** エンジンが落ちた / frida のロードに失敗した */
+  | "failed";
+
+export interface VoiceCordStatus {
+  engine: EngineState
+  /** attach 先の audio utility プロセス */
+  attachedPid: number | null
+  /**
+   * エンジン自身（utilityProcess の子）の PID。
+   * 実機で「どのプロセスがエンジンか」を判別する手段がこれしか無い。
+   * Discord 自身も node.mojom.NodeService を持っていて、コマンドラインでは区別できない。
+   */
+  enginePid: number | null
+  discordBuild: string
+  discordVersion: string
+  /**
+   * hook が 1 秒あたりに消費するサンプル数。注入用 PCM のデコードレートになる。
+   *
+   * 旧解析では 48000 固定と書かれていたが、Canary 1.0.1169 の実機では
+   * 320 サンプル × 100Hz = 32000 だった。Discord 側でいつでも変わりうるので、
+   * 決め打ちにせず attach のたびに実測する。測れなければ null。
+   */
+  sampleRate: number | null
+  /** 1 フレームのサンプル数。診断用（sampleRate の根拠） */
+  frameSamples: number | null
+  /** engine が failed のときの理由。UI にそのまま出す */
+  lastError: string | null
+  /** patcher のサブシステムのうち起動に失敗したもの */
+  degraded: Array<{ name: string; error: string }>
+  /**
+   * hook.js が最後に送った VC 在席（vc イベントの active）。
+   * vc は変化したときしか来ないので、UI の再読み込み後はこれで在席を知る。
+   * attach していなければ false
+   */
+  vcActive: boolean
+}
+
+/**
+ * main → renderer のイベント。
+ *
+ * エンジン由来のイベント（vc / gate / calib / voiceEnded / detached など）は
+ * 形を engine 側が決めるので、`engine` で包んで素の形のまま運ぶ。
+ * 包まずに union へ混ぜると、`{ ev: string }` の catch-all が status / log の
+ * 判別を潰してしまう。
+ */
+export type VoiceCordEvent =
+  | { ev: "status"; status: VoiceCordStatus }
+  | { ev: "log"; level: "info" | "warn" | "error"; message: string }
+  | { ev: "engine"; payload: RawEngineEvent };
