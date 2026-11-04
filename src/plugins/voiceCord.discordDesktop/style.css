@@ -1,0 +1,75 @@
+/* 見た目は Discord の部品とクラスに任せ、ここでは寸法と並べ方だけを決める */
+
+/* 純正サウンドボードのポップアウトと同じ幅。高さは純正の 520px を上限に中身に合わせる */
+.vc-voicecord-picker {
+    width: 531px;
+    height: auto;
+    max-height: 520px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 0 0;
+}
+
+.vc-voicecord-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+}
+
+.vc-voicecord-state {
+    flex: 1;
+    color: var(--text-muted);
+}
+
+.vc-voicecord-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--text-muted);
+}
+
+.vc-voicecord-dot-attached {
+    background: var(--status-positive);
+}
+
+.vc-voicecord-dot-searching {
+    background: var(--status-warning);
+}
+
+.vc-voicecord-dot-failed {
+    background: var(--status-danger);
+}
+
+.vc-voicecord-problem {
+    padding: 0 12px;
+    color: var(--text-feedback-critical, var(--status-danger));
+}
+
+.vc-voicecord-empty {
+    padding: 0 16px 12px;
+    color: var(--text-muted);
+}
+
+/* 純正と同じく、中身の幅を約 475px にする */
+.vc-voicecord-scroller {
+    flex: 1;
+    min-height: 0;
+    padding: 0 24px 16px 28px;
+}
+
+.vc-voicecord-fab-wrapper {
+    position: fixed;
+    right: 24px;
+    bottom: 96px;
+    z-index: 1000;
+}
+
+.vc-voicecord-fab {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    box-shadow: var(--shadow-high);
+}

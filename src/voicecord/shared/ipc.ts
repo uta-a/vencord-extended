@@ -106,6 +106,8 @@ export interface VoiceCordStatus {
    * attach していなければ false
    */
   vcActive: boolean
+  /** 再生中の voiceId。long-poll で voiceEnded を取りこぼしても、取り直した状態で「再生中」が残らないように持つ */
+  playing: string[]
 }
 
 /**

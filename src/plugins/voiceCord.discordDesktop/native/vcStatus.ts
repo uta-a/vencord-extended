@@ -24,6 +24,15 @@ export function nextVcActive(prev: boolean, e: VoiceCordEvent): boolean {
   return prev;
 }
 
+/** 再生中の voiceId の一覧を、エンジンのイベントで更新する。変化が無ければ同じ配列を返す */
+export function nextPlaying(prev: string[], e: VoiceCordEvent): string[] {
+  if (e.ev !== "engine") return prev;
+  const p = e.payload;
+  if (p.ev === "voiceEnded" || p.ev === "playRejected") return prev.filter(v => v !== p.voiceId);
+  if (p.ev === "detached" || p.ev === "engineLost") return prev.length ? [] : prev;
+  return prev;
+}
+
 /** エンジンの状態が変わったときの vcActive。attach していなければ在席していない */
 export function vcActiveForState(state: EngineState, prev: boolean): boolean {
   return state === "attached" ? prev : false;

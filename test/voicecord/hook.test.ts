@@ -10,7 +10,12 @@ import { fileURLToPath } from 'url'
 import { createContext, runInContext } from 'vm'
 import { describe, expect, it } from 'vitest'
 import { gatedRms } from '../../src/voicecord/shared/loudness.js'
-// 「PCM と実フレームのレートが異なる再生」のテストは renderer 側の API（M2 の api.ts）に依存するので、M2 で移す
+import { createApi, type VoiceCordNative } from '../../src/plugins/voiceCord.discordDesktop/api.js'
+import type { VoiceCordStatus } from '../../src/voicecord/shared/ipc.js'
+import { createEngineCore } from '../../src/voicecord/engine/core.js'
+import { FridaGate } from '../../src/voicecord/engine/transmit.js'
+import type { Injector } from '../../src/voicecord/engine/injector.js'
+import type { InjectPlayReq } from '../../src/voicecord/shared/types.js'
 
 const HOOK_SRC = readFileSync(fileURLToPath(new URL('../../src/voicecord/agent/hook.js', import.meta.url)), 'utf-8')
 
@@ -179,6 +184,123 @@ function loadHook(format: 'float' | 'i16' = 'float'): Harness {
 const FRAME = 480
 const flat = (amp: number): Float32Array => new Float32Array(FRAME).fill(amp)
 const dbfs = (lin: number): number => 20 * Math.log10(lin)
+
+const tone = (rate: number, hz = 440): Float32Array =>
+  Float32Array.from({ length: rate }, (_, i) => 0.3 * Math.sin(2 * Math.PI * hz * i / rate))
+
+function frequency(samples: number[], rate: number): number {
+  const crossings: number[] = []
+  for (let i = 1; i < samples.length; i++) {
+    if (samples[i - 1]! <= 0 && samples[i]! > 0) crossings.push(i)
+  }
+  return (crossings.length - 1) * rate / (crossings.at(-1)! - crossings[0]!)
+}
+
+// renderer の api（createApi）から engine core を経て hook.js まで通す。
+// main の native は、long-poll（nextEvents）で状態を届ける偽物に置き換える
+function player(h: Harness, initialRate: number | null = null) {
+  let status = { sampleRate: initialRate, frameSamples: initialRate === null ? null : initialRate / 100 } as VoiceCordStatus
+  let cursor = 0
+  let deliver: (s: VoiceCordStatus) => void = () => {}
+  let decoded: () => void = () => {}
+  let release: () => void = () => {}
+  const started = new Promise<void>((resolve) => { decoded = resolve })
+  const blocked = new Promise<void>((resolve) => { release = resolve })
+  const inj = {
+    attached: true,
+    preload: (key: string, rate: number, pcm: Buffer) => h.pcm(key, new Float32Array(pcm.buffer, pcm.byteOffset, pcm.byteLength / 4), rate),
+    play: (key: string, vol: number) => {
+      h.ctrl({ op: 'play', voiceId: 'tone', srcId: key, vol })
+      return 'tone'
+    }
+  } as unknown as Injector
+  const core = createEngineCore({ inj, gate: new FridaGate({ gateOpen: () => {}, gateClose: () => {}, gateReset: () => {} }), emit: () => {} })
+  const native = {
+    getStatus: async () => status,
+    readSoundFile: async () => tone(48000).buffer,
+    preloadPcm: async (srcId: string, fp: string, rate: number, pcm: ArrayBuffer) => core.preloadPcm(srcId, fp, rate, Buffer.from(pcm)),
+    play: async (req: InjectPlayReq) => core.play(req),
+    nextEvents: (c: number | null) => c === null
+      ? Promise.resolve({ reset: true as const, cursor })
+      : new Promise((resolve) => {
+        deliver = (s) => resolve({ cursor: ++cursor, events: [{ ev: 'status', status: s }] })
+      })
+  } as unknown as VoiceCordNative
+  const api = createApi(native, (rate) => async () => {
+    decoded()
+    await blocked
+    return [tone(rate)]
+  })
+  return {
+    api, started, release,
+    setRate: async (rate: number) => {
+      status = { ...status, sampleRate: rate, frameSamples: rate / 100 }
+      deliver(status)
+      // ループが通知を受け取って注入レートを更新するまで待つ
+      await new Promise((r) => setTimeout(r, 0))
+    }
+  }
+}
+
+describe('PCM と実フレームのレートが異なる再生', () => {
+  it.each(['float', 'i16'] as const)('未計測でも %s の 32kHz 出力で 1 秒・440Hz を保つ', async (format) => {
+    const h = loadHook(format)
+    const p = player(h)
+    p.release()
+    await p.api.play({ srcId: 's', path: 'tone.wav', fp: 'same', vol: 1 })
+    const output: number[] = []
+    for (let i = 0; i < 100; i++) output.push(...h.frame(new Float32Array(320)))
+    expect(frequency(output.slice(3200, 28800), 32000)).toBeCloseTo(440, 0)
+    expect(h.last('voiceEnded')).toBeUndefined()
+    for (let i = 0; i < 3; i++) h.frame(new Float32Array(320))
+    expect(h.last('voiceEnded')?.voiceId).toBe('tone')
+    p.api.close()
+  })
+
+  it('デコード中に 48kHz から 32kHz へ変わっても古い PCM を低速にしない', async () => {
+    const h = loadHook()
+    const p = player(h, 48000)
+    const job = p.api.play({ srcId: 's', path: 'tone.wav', fp: 'same', vol: 1 })
+    await p.started
+    await p.setRate(32000)
+    p.release()
+    await job
+    const output: number[] = []
+    for (let i = 0; i < 100; i++) output.push(...h.frame(new Float32Array(320)))
+    expect(frequency(output.slice(3200, 28800), 32000)).toBeCloseTo(440, 0)
+    for (let i = 0; i < 3; i++) h.frame(new Float32Array(320))
+    expect(h.last('voiceEnded')?.voiceId).toBe('tone')
+    p.api.close()
+  })
+
+  it.each([[32000, 48000], [48000, 32000]])('再生中の %i → %i Hz 変更でも速度・ピッチ・再生位置を保つ', async (before, after) => {
+    const h = loadHook()
+    const p = player(h, before)
+    p.release()
+    await p.api.play({ srcId: 's', path: 'tone.wav', fp: 'same', vol: 1 })
+    const first: number[] = [], second: number[] = []
+    for (let i = 0; i < 50; i++) first.push(...h.frame(new Float32Array(before / 100)))
+    for (let i = 0; i < 50; i++) second.push(...h.frame(new Float32Array(after / 100)))
+    expect(frequency(first.slice(before / 10), before)).toBeCloseTo(440, 0)
+    expect(frequency(second, after)).toBeCloseTo(440, 0)
+    expect(h.last('voiceEnded')).toBeUndefined()
+    for (let i = 0; i < 3; i++) h.frame(new Float32Array(after / 100))
+    expect(h.last('voiceEnded')?.voiceId).toBe('tone')
+    p.api.close()
+  })
+
+  it('48kHz の生 f32 音源も 32kHz の出力で 1 秒・440Hz を保つ', async () => {
+    const h = loadHook()
+    const p = player(h, 32000)
+    await p.api.play({ srcId: 's', path: 'tone.f32', fp: 'same', vol: 1 })
+    const output: number[] = []
+    for (let i = 0; i < 100; i++) output.push(...h.frame(new Float32Array(320)))
+    expect(frequency(output.slice(3200, 28800), 32000)).toBeCloseTo(440, 0)
+    for (let i = 0; i < 3; i++) h.frame(new Float32Array(320))
+    expect(h.last('voiceEnded')?.voiceId).toBe('tone')
+    p.api.close()
+  })
+})
 
 describe('hook.js の声の計測', () => {
   it('フック設置に成功して ready を出す', () => {
