@@ -40,19 +40,23 @@ export function createEventQueue<T>({ max, waitMs }: EventQueueOptions) {
         /**
          * cursor より新しいイベントを返す。無ければ来るまで（最長 waitMs）待つ。
          * onGone には、呼び出し元が消えたときに呼ぶ関数を登録する口を渡す（webContents の destroyed など）。
+         * onGone が購読の解除関数を返せば、応答したときに呼んで外す
          */
-        next(cursor: number | null, onGone?: (cb: () => void) => void): Promise<NextResult<T>> {
+        next(cursor: number | null, onGone?: (cb: () => void) => (() => void) | void): Promise<NextResult<T>> {
             if (typeof cursor !== "number" || !Number.isInteger(cursor)) return Promise.resolve({ reset: true, cursor: seq });
             const now = read(cursor);
             if (now) return Promise.resolve(now);
 
             return new Promise(resolve => {
                 let done = false;
+                // onGone が同期的に呼び返しても参照できるよう、解除関数は入れ物に持つ
+                const sub: { off?: (() => void) | void; } = {};
                 const finish = (r: NextResult<T>) => {
                     if (done) return;
                     done = true;
                     clearTimeout(timer);
                     waiters.delete(wake);
+                    sub.off?.();
                     resolve(r);
                 };
                 const wake = () => {
@@ -61,7 +65,7 @@ export function createEventQueue<T>({ max, waitMs }: EventQueueOptions) {
                 };
                 const timer = setTimeout(() => finish({ cursor, events: [] }), waitMs);
                 waiters.add(wake);
-                onGone?.(() => finish({ cursor, events: [] }));
+                sub.off = onGone?.(() => finish({ cursor, events: [] }));
             });
         },
 

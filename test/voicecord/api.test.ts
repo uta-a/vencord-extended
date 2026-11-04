@@ -69,6 +69,42 @@ describe("createApi の通知ループ", () => {
         api.close();
     });
 
+    it("reset の後の取り直しに失敗したら、成功するまで reset からやり直す", async () => {
+        vi.useFakeTimers();
+        try {
+            const { native, raw, calls } = fakeNative([{ reset: true, cursor: 7 }, { reset: true, cursor: 7 }]);
+            raw.getStatus.mockRejectedValueOnce(new Error("一時的な失敗"));
+            const api = createApi(native);
+            const got: VoiceCordEvent[] = [];
+            api.onEvent(e => got.push(e));
+            await vi.advanceTimersByTimeAsync(1000);
+            expect(raw.getStatus).toHaveBeenCalledTimes(2);
+            expect(got).toEqual([{ ev: "status", status: status() }]);
+            // 失敗した回は cursor を進めないので、次も null から取りに行く
+            expect(calls).toEqual([null, null, 7]);
+            api.close();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("状態の取り直しを待つ間に close したら、音量の復元もイベントも起こさない", async () => {
+        let resolveStatus: (s: VoiceCordStatus) => void = () => { };
+        const { native, raw } = fakeNative([{ reset: true, cursor: 0 }]);
+        raw.getStatus.mockImplementationOnce(() => new Promise(r => { resolveStatus = r; }));
+        const api = createApi(native);
+        await api.setMaster(2);
+        raw.setMaster.mockClear();
+        const got: VoiceCordEvent[] = [];
+        api.onEvent(e => got.push(e));
+        await flush();
+        api.close();
+        resolveStatus(status({ engine: "attached", enginePid: 9 }));
+        await flush();
+        expect(raw.setMaster).not.toHaveBeenCalled();
+        expect(got).toEqual([]);
+    });
+
     it("close の後はイベントを流さない", async () => {
         let resolve: (v: unknown) => void = () => { };
         const native = {

@@ -285,7 +285,10 @@ export function getStatus(_: IpcMainInvokeEvent): VoiceCordStatus {
 
 /** main からの通知を long-poll で受け取る。cursor が null か古すぎれば reset を返すので、getStatus で取り直す */
 export function nextEvents(e: IpcMainInvokeEvent, cursor: unknown): Promise<NextResult<VoiceCordEvent>> {
-    return events.next(typeof cursor === "number" ? cursor : null, gone => e.sender.once("destroyed", gone));
+    return events.next(typeof cursor === "number" ? cursor : null, gone => {
+        e.sender.once("destroyed", gone);
+        return () => e.sender.removeListener("destroyed", gone);
+    });
 }
 
 function setPlaying(playing: string[]) {
@@ -407,9 +410,13 @@ export function calibStop(_: IpcMainInvokeEvent) {
 /** 手動リトライ。engine への転送ではなくプロセスの起こし直し */
 export function reattach(_: IpcMainInvokeEvent): VoiceCordStatus {
     needEngine().restart();
+    // 古い子の exit は無視されるので engineLost は来ない。hook ごと消えた再生はここで外す
+    setPlaying([]);
     return status;
 }
 
-export function detach(_: IpcMainInvokeEvent) {
-    return engineRequest("voicecord:detach", []);
+export async function detach(_: IpcMainInvokeEvent) {
+    await engineRequest("voicecord:detach", []);
+    // 手動の detach では detached が来ない
+    setPlaying([]);
 }

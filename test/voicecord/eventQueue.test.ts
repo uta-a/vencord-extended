@@ -75,6 +75,18 @@ describe("eventQueue", () => {
         expect(q.pending()).toBe(0);
     });
 
+    it("応答したら相手の消滅の購読を外す（購読が溜まり続けない）", async () => {
+        const q = queue();
+        const unsubscribed: string[] = [];
+        const p1 = q.next(0, () => () => unsubscribed.push("event"));
+        q.push("a");
+        await p1;
+        const p2 = q.next(1, () => () => unsubscribed.push("timeout"));
+        vi.advanceTimersByTime(1000);
+        await p2;
+        expect(unsubscribed).toEqual(["event", "timeout"]);
+    });
+
     it("cursor が数値でなければ最初の呼び出しとして扱う", async () => {
         const q = queue();
         await expect(q.next("x" as unknown as number)).resolves.toEqual({ reset: true, cursor: 0 });

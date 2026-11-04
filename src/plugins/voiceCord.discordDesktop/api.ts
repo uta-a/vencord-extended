@@ -76,9 +76,10 @@ export function createApi(native: VoiceCordNative, makeDecoder: (sampleRate: num
                 const r = await native.nextEvents(cursor);
                 if (closed) break;
                 if ("reset" in r) {
-                    cursor = r.cursor;
-                    // 取りこぼした分は状態ごと取り直す（ログは欠けてよい）
+                    // 取りこぼした分は状態ごと取り直す（ログは欠けてよい）。取り直せるまで cursor は進めない
                     const status = await native.getStatus();
+                    if (closed) break;
+                    cursor = r.cursor;
                     onStatus(status);
                     dispatch({ ev: "status", status });
                     continue;
