@@ -101,8 +101,8 @@ export function describeInstall(i: DiscordInstall): string {
             return i.hasBackup ? "要確認: app.asar は素ですが _app.asar が残っています" : "未導入";
         case "extended":
             return `vencord-extended 導入済み（${s.patcher}）`;
-        case "voicecordChain":
-            return `旧 VoiceCord（${s.chain.join(" → ")}）`;
+        case "legacyChain":
+            return `${s.owner}（${s.chain.join(" → ")}）`;
         case "foreignShim":
             return `他の mod（${s.requires.join(", ") || "不明"}）`;
         case "missing":

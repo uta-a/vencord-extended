@@ -9,7 +9,7 @@
 
 import fs from "fs";
 
-import { parseLegacyChain, parseShimPatcher } from "./shim";
+import { type LegacyOwner, parseLegacyChain, parseShimPatcher } from "./shim";
 
 export interface AsarHeader {
     files: Record<string, { size?: number; offset?: string; files?: unknown; }>;
@@ -91,8 +91,8 @@ export type AppAsarKind =
     | { kind: "plain"; size: number; }
     /** このインストーラが書いた shim */
     | { kind: "extended"; size: number; patcher: string; }
-    /** 旧 VoiceCord Manager が書いた連鎖 shim */
-    | { kind: "voicecordChain"; size: number; chain: string[]; }
+    /** 旧 VoiceCord Manager や Modicord が書いた連鎖 shim */
+    | { kind: "legacyChain"; size: number; owner: LegacyOwner; chain: string[]; }
     /** 他の mod が書いた shim（Vencord 公式など）。require しているパスを持つ */
     | { kind: "foreignShim"; size: number; requires: string[]; }
     /** asar として読めない、または想定外の中身 */
@@ -120,8 +120,8 @@ export function classifyAsarBytes(buffer: Buffer, filePath: string): AppAsarKind
     if (index !== null && names.includes("package.json")) {
         const patcher = parseShimPatcher(index);
         if (patcher) return { kind: "extended", size, patcher };
-        const chain = parseLegacyChain(index);
-        if (chain) return { kind: "voicecordChain", size, chain };
+        const legacy = parseLegacyChain(index);
+        if (legacy) return { kind: "legacyChain", size, ...legacy };
         return { kind: "foreignShim", size, requires: extractRequirePaths(index) };
     }
     return {

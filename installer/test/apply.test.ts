@@ -131,9 +131,20 @@ describe("既存 mod からの置き換え", () => {
     it("旧 VoiceCord の連鎖 shim を丸ごと置き換え、二重に載せない", () => {
         fs.writeFileSync(t.appAsar, legacyChainShim([VOICECORD, VENCORD]));
         const { plan } = install();
-        assert.deepEqual(plan.replaces, [VOICECORD, VENCORD]);
+        assert.deepEqual(plan.replaces, [`VoiceCord: ${VOICECORD}`, `VoiceCord: ${VENCORD}`]);
         const text = fs.readFileSync(t.appAsar).toString("utf8");
         assert.ok(!text.includes("VoiceCord\\\\dist") && !text.includes("Roaming\\\\Vencord"));
+    });
+
+    it("Modicord の連鎖 shim を置き換え、外すものとして示す", () => {
+        fs.writeFileSync(t.appAsar, buildFlatAsar({
+            "index.js": '"use strict";\n// Modicord chain shim v1\nvar path = require("path"), fs = require("fs");\nvar CHAIN = ["@modicord/core"];\n',
+            "package.json": SHIM_PACKAGE_JSON
+        }));
+        const { plan } = install();
+        assert.deepEqual(plan.replaces, ["Modicord: @modicord/core"]);
+        assert.equal(sha256(fs.readFileSync(t.backupAsar)), sha256(original));
+        assert.equal(classifyAppAsar(t.appAsar).kind, "extended");
     });
 
     it("別の場所を指す vencord-extended の shim は置き換え対象として示す", () => {

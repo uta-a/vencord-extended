@@ -18,6 +18,17 @@ export const SHIM_MARKER = "VencordExtended shim v1";
 /** 旧 VoiceCord Manager の連鎖 shim のマーカー（置き換え対象の判定にだけ使う） */
 export const LEGACY_CHAIN_MARKER = "VoiceCord chain shim v1";
 
+/**
+ * 置き換えてよい連鎖 shim の持ち主とマーカー。
+ * どちらも `var CHAIN = [...]` の形で、Discord 本体は _app.asar に残している。
+ */
+const LEGACY_CHAINS = [
+    { owner: "VoiceCord", marker: LEGACY_CHAIN_MARKER },
+    { owner: "Modicord", marker: "Modicord chain shim v1" }
+] as const;
+
+export type LegacyOwner = typeof LEGACY_CHAINS[number]["owner"];
+
 /** Discord 本体と同じ app 名を名乗る必要がある */
 export const SHIM_PACKAGE_JSON = '{"name":"discord","main":"index.js"}';
 
@@ -40,15 +51,16 @@ export function parseShimPatcher(source: string): string | null {
     }
 }
 
-/** 旧 VoiceCord の連鎖 shim なら連鎖リストを返す。違えば null */
-export function parseLegacyChain(source: string): string[] | null {
-    if (!source.includes(LEGACY_CHAIN_MARKER)) return null;
+/** 旧 VoiceCord / Modicord の連鎖 shim なら持ち主と連鎖リストを返す。違えば null */
+export function parseLegacyChain(source: string): { owner: LegacyOwner; chain: string[]; } | null {
+    const legacy = LEGACY_CHAINS.find(l => source.includes(l.marker));
+    if (!legacy) return null;
     const m = /var CHAIN = (\[[^\]]*\]);/.exec(source);
     if (!m) return null;
     try {
         const parsed: unknown = JSON.parse(m[1]);
         if (!Array.isArray(parsed) || !parsed.every(x => typeof x === "string")) return null;
-        return parsed;
+        return { owner: legacy.owner, chain: parsed };
     } catch {
         return null;
     }

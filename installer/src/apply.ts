@@ -104,8 +104,8 @@ export function planInstall(t: PatchTarget, patcher: string): InstallPlan {
         case "extended":
             replaces = samePath(current.patcher, patcher) ? [] : [current.patcher];
             break;
-        case "voicecordChain":
-            replaces = current.chain;
+        case "legacyChain":
+            replaces = current.chain.map(c => `${current.owner}: ${c}`);
             break;
         case "foreignShim":
             // 正体の分かる Vencord 系（patcher.js を require するだけ）しか置き換えない
