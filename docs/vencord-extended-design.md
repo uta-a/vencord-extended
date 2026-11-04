@@ -201,8 +201,9 @@ nextEvents(cursor: number): Promise<
 >
 ```
 
-- main 側に、全体で 1 つのリングバッファ（連番付き、約 500 件）を置く。`cursor` より新しいイベントがあれば即座に返し、なければ次のイベントが来るまで Promise を保留する
-- `cursor` がバッファから落ちていれば `{ reset: true }` を返す。renderer は `getStatus()` で状態を丸ごと取り直し、返された cursor から再開する。Ctrl+R による再読み込みの直後も同じ扱いにする
+- main 側に、全体で 1 つのリングバッファ（連番付き、500 件）を置く。`cursor` より新しいイベントがあれば即座に返し、なければ次のイベントが来るまで Promise を保留する。25 秒待っても来なければ空で返し、永久には保留しない
+- `cursor` が `null`、バッファから落ちている、または未来を指している（main の再起動後）ときは `{ reset: true }` を返す。renderer は `getStatus()` で状態を丸ごと取り直し、返された cursor から再開する。Ctrl+R による再読み込みの直後も同じ扱いにする
+- renderer 側のループ（`api.ts`）は、失敗したら 1 秒おいて再試行し、プラグインの stop() で止める
 - `status` と `engine` は `getStatus()` のスナップショットで復元できればよい。`log` は欠けても構わない。再生終了の通知が欠けて「再生中」の表示が残らないよう、`getStatus()` は再生中の一覧も返す
 - 保留中の Promise は webContents ごとに管理する。webContents が破棄されたら、該当する Promise を解決して片付ける
 - 遅延は 1 往復ぶん（数 ms 程度）増えるが、UI の用途では問題にならない
@@ -222,10 +223,12 @@ UI は Vencord プラグインとしてメインワールドで動かし、Disco
 
 ### ボタンの差し込み
 
-- 音声パネルの actionButtons を描画するモジュールを、Vencord の `patches` で書き換える。純正サウンドボードボタンの隣に `$self.VoiceCordButton()` を挿入する
-- `find` はハッシュ付きクラス名ではなく、i18n キーやプロパティ名など安定した文字列で当てる。具体的な文字列は M2 で Canary を調べて決める
-- 見た目は `findByProps("actionButtons")` などで純正の CSS モジュールを引いて合わせる。現行の harvest.js がやっていたことを Vencord の API で置き換える形
-- パッチが当たらなかった場合は予備の FAB を出す。VC 参加中にボタンが一度も描画されなければ故障と判定し、理由を表示する
+- 音声パネルの actionButtons を描画するモジュールを、Vencord の `patches` で書き換える。純正サウンドボードボタン（ボタン列の最後の要素）の直後に `$self.renderPanelButton({channel})` を挿入する
+- `find` はハッシュ付きクラス名ではなく、プロパティ名など安定した文字列で当てる（M2 で Canary 1.0.1295 を調べて決めた）
+  - find: `/canGoLive:\i,enableActivities:/`（ボタン列を描画する関数の中のプロパティ名。全モジュールで一意）
+  - match: `/\{channel:(\i),focusProps:\i\}\):null(?=\]\})/`（純正サウンドボードボタンの要素の終わり。モジュール内で一意）
+- Discord の CSS モジュールは書き出しのキーも短縮されている（`uu:"actionButtons_e131a9"`）ため、`findByProps("actionButtons")` は使えない。代わりに `findCssClassesLazy` でクラス名の接頭辞から引く（`voiceUsers` と `actionButtons` を含めて音声パネルのモジュールに絞る）
+- パッチが当たらなかった場合は予備の FAB を出す。VC に入って 5 秒経ってもボタンが一度も描画されなければ故障と判定し、画面右下に FAB を出して理由をツールチップで示す
 
 ### ポップアウトと部品
 
