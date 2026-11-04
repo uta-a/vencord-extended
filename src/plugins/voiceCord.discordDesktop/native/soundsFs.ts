@@ -151,6 +151,8 @@ export function resolveSoundPath(fs: SoundsFs, folder: string, requested: string
   if (!isInside(realFolder, realTarget)) {
     return { ok: false, error: "音源フォルダの外は読み取れません" };
   }
+  // リンクの名前だけ .wav にして、配下の音声以外（config.json など）を指させる抜け道を塞ぐ
+  if (!isAudio(realTarget)) return { ok: false, error: "音声ファイルではありません" };
 
   try {
     if (!fs.statSync(realTarget).isFile()) return { ok: false, error: "ファイルではありません" };

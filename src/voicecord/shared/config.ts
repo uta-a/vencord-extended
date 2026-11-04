@@ -280,7 +280,9 @@ export function createConfigStore(
   return {
     get: () => data,
     save: partial => {
-      data = { ...data, ...partial };
+      // 保存する値も読み込み時と同じく矯正する。native は他のプラグインからも呼べるので、
+      // 壊れた値（型違い・範囲外）を書き込ませない
+      data = sanitize({ ...data, ...partial }, dflt);
       return saveConfigFile(fs, paths.config, data, dirname);
     },
     loadWarning: notes.length > 0 ? notes.join("\n") : null

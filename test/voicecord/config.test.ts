@@ -270,6 +270,18 @@ describe('createConfigStore', () => {
     expect(JSON.parse(fs.files.get(CONFIG) as string).master).toBe(2.0)
   })
 
+  it('保存する値も読み込み時と同じく矯正する（native は他のプラグインからも呼べる）', () => {
+    const fs = fakeFs({ [CONFIG]: JSON.stringify({ master: 1.0 }) })
+    const store = createConfigStore(fs, PATHS, DFLT, dirname)
+    store.save({ folder: 123, master: -99, sourceVolumes: { a: 9 } } as unknown as Partial<AppConfig>)
+    expect(store.get().folder).toBe(DFLT.folder)
+    expect(store.get().master).toBe(0)
+    expect(store.get().sourceVolumes).toEqual({ a: 1.5 })
+    const saved = JSON.parse(fs.files.get(CONFIG) as string)
+    expect(saved.folder).toBe(DFLT.folder)
+    expect(saved.master).toBe(0)
+  })
+
   it('保存に失敗しても在庫の値は更新する（UI を固まらせない）', () => {
     const fs = fakeFs({ [CONFIG]: JSON.stringify({ master: 1.0 }) }, { failWrite: `${CONFIG}.tmp` })
     const store = createConfigStore(fs, PATHS, DFLT, dirname)

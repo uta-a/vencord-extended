@@ -171,6 +171,8 @@ describe('resolveSoundPath', () => {
     [win('C:/sounds/sub')]: { kind: 'dir' },
     // 配下に見えて実体は外を指すリンク
     [win('C:/sounds/link.wav')]: { kind: 'file', real: win('C:/secret/keys.wav') },
+    // 配下の音声に見えて、実体は同じフォルダの音声以外を指すリンク
+    [win('C:/sounds/alias.wav')]: { kind: 'file', real: win('C:/sounds/conf.json') },
     [win('C:/secret/keys.wav')]: { kind: 'file' },
     [win('C:/outside.wav')]: { kind: 'file' }
   })
@@ -209,6 +211,13 @@ describe('resolveSoundPath', () => {
 
   it('音声以外はフォルダ配下でも渡さない', () => {
     expect(resolveSoundPath(fs, FOLDER, win('C:/sounds/conf.json'))).toEqual({
+      ok: false,
+      error: '音声ファイルではありません'
+    })
+  })
+
+  it('リンクの実体が音声以外なら、フォルダ配下でも渡さない（拡張子は realpath の後でも見る）', () => {
+    expect(resolveSoundPath(fs, FOLDER, win('C:/sounds/alias.wav'))).toEqual({
       ok: false,
       error: '音声ファイルではありません'
     })
