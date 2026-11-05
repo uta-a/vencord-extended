@@ -10,6 +10,7 @@ import { Clickable, SelectedChannelStore, Tooltip } from "@webpack/common";
 import type { MouseEvent } from "react";
 
 import { isSoundboardSoundId } from "../../voicecord/shared/soundboard";
+import { PanelClasses } from "./components/discord";
 import { FilledStopIcon } from "./components/icons";
 import { isTrustedInput } from "./lib/trusted";
 import { playingSoundboardIds, store } from "./store";
@@ -91,8 +92,12 @@ const UNLOCK_CSS = [
     "[class*=\"categoryItemLockIconContainer_\"]{display:none !important}"
 ].map(rule => `html[${UNLOCK_ATTR}] ${rule.replace(/,/g, `,html[${UNLOCK_ATTR}] `)}`).join("");
 
-// ビデオボタンを隠す。VoiceCord のボタンがある列の先頭の子（純正の並びではカメラ）だけに効かせる
-const CAMERA_CSS = `html[${HIDE_CAMERA_ATTR}] [class*="actionButtons_"]:has(> .vc-voicecord-panel-slot) > :first-child:not(.vc-voicecord-panel-slot){display:none !important}`;
+// ビデオボタンを隠す。音声パネルのボタン列の先頭の子（純正の並びではカメラ）だけに効かせる。
+// 「actionButtons_」はほかの部品にもあるので、部分一致ではなく音声パネルの CSS モジュールのクラスで当てる
+function cameraCss() {
+    const row = PanelClasses.actionButtons?.split(" ")[0];
+    return row ? `html[${HIDE_CAMERA_ATTR}] .${row} > :first-child{display:none !important}` : "";
+}
 
 // VoiceCord で鳴らしている純正サウンドボードのサウンドに、純正の再生中と同じ緑の枠を付ける
 function playingCss(ids: readonly string[]) {
@@ -113,7 +118,7 @@ export function watchSoundboardStyles() {
         const s = store.getState();
         root.toggleAttribute(HIDE_CAMERA_ATTR, s.settings.hideCameraButton);
         root.toggleAttribute(UNLOCK_ATTR, s.settings.unlockSoundboard);
-        const css = CAMERA_CSS + UNLOCK_CSS + playingCss(playingSoundboardIds(s.voices));
+        const css = cameraCss() + UNLOCK_CSS + playingCss(playingSoundboardIds(s.voices));
         if (css !== lastCss) style.textContent = lastCss = css;
     };
     apply();

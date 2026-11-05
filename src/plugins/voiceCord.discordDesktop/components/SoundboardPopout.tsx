@@ -292,8 +292,8 @@ function StatusSection() {
     const krispHint = useVoiceCord(s => s.krispHint && s.connection === "waiting");
     const problems = status ? statusProblems(status) : [];
     // 普段は見ない診断なので畳むが、不具合があるときは開いておく（畳んだ中に隠さない）
-    const hasIssue = problems.length > 0 || krispHint || !state.buttonSeen;
-    const issueKey = hasIssue ? JSON.stringify([problems, krispHint, state.buttonSeen]) : "";
+    const hasIssue = problems.length > 0 || krispHint || !state.tabsSeen;
+    const issueKey = hasIssue ? JSON.stringify([problems, krispHint, state.tabsSeen]) : "";
     const [expanded, setExpanded] = useState(hasIssue);
     useEffect(() => {
         if (issueKey !== "") setExpanded(true);
@@ -308,7 +308,7 @@ function StatusSection() {
         rows.push(["注入レート", status.sampleRate === null ? "未計測" : `${status.sampleRate} Hz（${status.frameSamples ?? "?"} サンプル）`]);
     }
     if (krispHint) rows.push(["VC 検出", "Krisp の処理を検出できません（ノイズ抑制を Krisp にし、ミュートを解除）"]);
-    rows.push(["ボタン", state.buttonSeen ? "音声パネル（サウンドボードの隣）" : "未表示（VC に入ると音声パネルに出ます。出ない場合は画面右下の予備ボタン）"]);
+    rows.push(["表示場所", state.tabsSeen ? "音声パネルのサウンドボードの「VoiceCord」タブ" : "画面右下の予備ボタン（サウンドボードにタブを差し込めませんでした）"]);
 
     return (
         <section aria-label="接続状態">
@@ -396,11 +396,12 @@ function SettingsView({ onBack }: { onBack: () => void; }) {
     );
 }
 
-export function SoundboardPopout() {
+/** embedded: 純正サウンドボードのタブの中に置く。枠（背景・影・大きさ）はタブの側が持つ */
+export function SoundboardPopout({ embedded }: { embedded?: boolean; }) {
     // 閉じたら次に開いたときはサウンドの一覧から始める（純正と同じ）。ポップアウトごと作り直されるので状態は持ち越さない
     const [view, setView] = useState<"main" | "settings">("main");
     return (
-        <div className={classes(PickerClasses.picker, "vc-voicecord-picker")} role="dialog" aria-label="VoiceCord サウンドボード">
+        <div className={embedded ? "vc-voicecord-embedded" : classes(PickerClasses.picker, "vc-voicecord-picker")} role={embedded ? undefined : "dialog"} aria-label="VoiceCord サウンドボード">
             {view === "main"
                 ? <MainView onOpenSettings={() => setView("settings")} />
                 : <SettingsView onBack={() => setView("main")} />}

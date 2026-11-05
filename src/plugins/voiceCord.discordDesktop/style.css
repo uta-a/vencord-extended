@@ -10,6 +10,41 @@
     flex-direction: column;
 }
 
+/* ---- 純正サウンドボードのタブ（純正のポップアウトと同じ 531×420 の中身に、タブの列を足す） ---- */
+
+.vc-voicecord-tabs {
+    height: auto;
+}
+
+.vc-voicecord-tabs-nav {
+    padding-top: 12px;
+    flex-shrink: 0;
+}
+
+.vc-voicecord-tabs-body {
+    /* 純正の中身の左端のカテゴリの列は、位置を親の枠から測る。タブの分ずれないよう、ここを基準にする */
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 420px;
+    min-height: 0;
+}
+
+/* 純正の中身は自分の枠（影・角丸・大きさ）を持つので、タブの枠の中では外す */
+.vc-voicecord-tabs-body > * {
+    flex: 1;
+    min-height: 0;
+    width: auto;
+    height: auto;
+    box-shadow: none;
+    border-radius: 0;
+}
+
+.vc-voicecord-embedded {
+    display: flex;
+    flex-direction: column;
+}
+
 .vc-voicecord-header {
     display: flex;
     align-items: center;
@@ -23,6 +58,11 @@
     min-height: 0;
     max-height: 456px;
     padding: 0 24px 12px 28px;
+}
+
+/* タブの中では枠の高さが決まっているので、残りをすべて使う */
+.vc-voicecord-embedded .vc-voicecord-scroller {
+    max-height: none;
 }
 
 .vc-voicecord-settings {

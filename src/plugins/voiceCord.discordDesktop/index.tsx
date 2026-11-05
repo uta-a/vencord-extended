@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import ErrorBoundary from "@components/ErrorBoundary";
 import { Logger } from "@utils/Logger";
 import definePlugin from "@utils/types";
 import { showToast } from "@webpack/common";
@@ -13,10 +12,10 @@ import { createApi, type VoiceCordNative } from "./api";
 import { mountFab, unmountFab } from "./components/Fab";
 import { syncLevelModal } from "./components/LevelModal";
 import { PluginSettings } from "./components/PluginSettings";
-import { VoiceCordButton } from "./components/VoiceCordButton";
+import { renderSoundboardTabs } from "./components/SoundboardTabs";
 import { onSoundClick, renderHeaderAccessories, watchSoundboardStyles, watchVoiceChannel } from "./discordIntegration";
 import { setEngineStatus } from "./engineStatus";
-import { needApi, state } from "./state";
+import { markTabsPatched, needApi, state } from "./state";
 import { bindApi, resetStore, store } from "./store";
 import style from "./style.css?managed";
 
@@ -45,11 +44,15 @@ export default definePlugin({
 
     patches: [
         {
-            // 音声パネルのボタン列。純正サウンドボードボタン（最後の要素）の直後に差し込む
-            find: /canGoLive:\i,enableActivities:/,
+            // 音声パネルのサウンドボードのポップアウト。純正の中身を包み、「サウンドボード / VoiceCord」のタブを付ける
+            find: "CUSTOM_CALL_SOUNDS_PICKER_UPSELL&&",
             replacement: {
-                match: /\{channel:(\i),focusProps:\i\}\):null(?=\]\})/,
-                replace: "$&,$self.renderPanelButton({channel:$1})"
+                match: /\(0,\i\.jsx\)\(\i\.\i,\{guildId:\i,channel:\i,onClose:\i,gridNotice:.{0,150}?analyticsSource:"rtc panel"\}\)/,
+                // 当たったことを記録する（外れていたら予備のボタンを出す）。パッチ済みのソースは開発ビルドでしか残らないので、ここで印を付ける
+                replace: m => {
+                    markTabsPatched();
+                    return `$self.renderSoundboardTabs(${m})`;
+                }
             }
         },
         {
@@ -71,7 +74,7 @@ export default definePlugin({
         }
     ],
 
-    renderPanelButton: ErrorBoundary.wrap(VoiceCordButton, { noop: true }),
+    renderSoundboardTabs,
     onSoundClick,
     renderHeaderAccessories,
 
@@ -129,6 +132,7 @@ export default definePlugin({
     // DevTools からの確認用: Vencord.Plugins.plugins.VoiceCord.debug.status()
     debug: {
         status: () => needApi().getStatus(),
-        store: () => store.getState()
+        store: () => store.getState(),
+        tabsPatched: () => state.tabsPatched
     }
 });
