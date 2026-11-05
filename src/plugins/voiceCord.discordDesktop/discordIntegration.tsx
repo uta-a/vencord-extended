@@ -5,7 +5,7 @@
  */
 
 import ErrorBoundary from "@components/ErrorBoundary";
-import { filters, findCssClassesLazy, mapMangledCssClasses, waitFor } from "@webpack";
+import { filters, findCssClassesLazy, mapMangledCssClasses, waitFor, waitForSubscriptions } from "@webpack";
 import { Clickable, SelectedChannelStore, Tooltip } from "@webpack/common";
 import type { MouseEvent } from "react";
 
@@ -98,18 +98,26 @@ const UNLOCK_CSS = [
 const PANEL_CLASSES = ["voiceUsers", "actionButtons", "button", "buttonColor", "buttonContents", "buttonIcon", "greyButtonActive"];
 let actionButtonsClass: string | null = null;
 const actionButtonsListeners = new Set<() => void>();
-let waitingActionButtons = false;
+// 待っている間の waitFor のフィルター。プラグインを止めたら購読ごと外す
+let waitingFilter: ReturnType<typeof filters.byClassNames> | null = null;
 
 function watchActionButtonsClass(onFound: () => void) {
     actionButtonsListeners.add(onFound);
-    if (!waitingActionButtons && actionButtonsClass === null) {
-        waitingActionButtons = true;
-        waitFor(filters.byClassNames(...PANEL_CLASSES), m => {
+    if (waitingFilter === null && actionButtonsClass === null) {
+        const filter = waitingFilter = filters.byClassNames(...PANEL_CLASSES);
+        waitFor(filter, m => {
+            if (waitingFilter === filter) waitingFilter = null;
             actionButtonsClass = mapMangledCssClasses(m, ["actionButtons"]).actionButtons?.split(" ")[0] ?? null;
             for (const cb of actionButtonsListeners) cb();
         });
     }
-    return () => void actionButtonsListeners.delete(onFound);
+    return () => {
+        actionButtonsListeners.delete(onFound);
+        if (actionButtonsListeners.size === 0 && waitingFilter !== null) {
+            waitForSubscriptions.delete(waitingFilter);
+            waitingFilter = null;
+        }
+    };
 }
 
 function cameraCss() {
