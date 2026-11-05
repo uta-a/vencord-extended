@@ -300,11 +300,14 @@ UI は Vencord プラグインとしてメインワールドで動かし、Disco
 - 更新元はビルド時の git remote から自動で `uta-a/vencord-extended` になる（`gitRemotePlugin`）
 - `VENCORD_FILES` は 4 ファイルのままにする。ランタイムは、patcher.js に埋めた必要版と手元の manifest が食い違うときだけ取得する
 - 必要版に加えて、zip の期待する sha256 もビルド時に patcher.js へ埋める。取得した zip はその値で検証する。zip 内の manifest は zip と同じ出どころなので、検証には使わない（手元の版の記録にだけ使う）
-- 展開は一時フォルダで行い、検証が通ってから入れ替える。一致しなければ破棄し、status.engine = failed として理由を表示する
+- 展開は一時フォルダで行い、検証が通ってから入れ替える。一致しなければ破棄する。旧版があれば旧版で動き続け（理由は degraded で示す）、旧版も無ければ status.engine = failed として理由を表示する
 - 実行中のエンジンが frida の .node を掴んでいるため、入れ替えは次回起動時に行う
 - 実装（M4）: `scripts/build/voicecord.mjs` の `prepareVoiceCordRelease` が、リリースのビルド（`--voicecord-release=<タグ>`）でだけ、エンジンとランタイムを patcher.js より先に作って zip にし、`VOICECORD_RUNTIME`（版・sha256・取得元）を埋める。版はランタイムの中身から作るので、中身が変わらなければ利用者は取り直さない。開発中のビルドでは null で、取得しない
 - 起動時（`native/runtimeUpdate.ts`）: `<dist>/voicecord.next` が必要な版なら、エンジンを起こす前に入れ替える。手元に無ければ取得してから起こし、古ければ今の版で起こして裏で `.next` を用意する。展開は `.tmp` で行ってから `.next` へ名前を変える
 - zip の読み書きは依存を増やさず自前で持つ（`scripts/build/zip.mjs`、`native/zip.ts`）。読む側は、展開先の外を指す名前・暗号化・展開後 512 MB 超を断つ
+- 取得は 200 MB・10 分を上限にし、プラグインを止めたら取り消す。展開は取得ごとに別の一時フォルダで行う
+- dist は Stable・Canary など複数の Discord で共有しうるので、`.next` を置く処理と入れ替えは `<dir>.lock` で排他する（ほかのプロセスが持っていれば見送る。2 分を超えたロックは落ちたプロセスの残りと見なす）
+- 入れ替えが途中で失敗しても、旧版は `.old` に残し、次の呼び出しの最初に戻す。入れ替えに失敗した起動でも、今ある版でエンジンを起こす
 - Discord 本体の更新後に再パッチする処理は、Vencord の `persistAfterDiscordUpdates` をそのまま使う
 
 ### インストーラ
@@ -318,7 +321,8 @@ Vencord 公式インストーラは Vendicated のリリースを取りに行く
 - 既存の Vencord や VoiceCord の shim を検出したら、二重に載せず置き換える。置き換え前に「これを外します」と表示する
 - `pnpm inject` / `uninject` はこのインストーラの CLI モードを呼ぶように差し替える
 - 形（M4）: Node SEA の単一 exe（`scripts/build/installer.mjs`）。引数なしで起動すると、Vencord 公式インストーラの CLI 版（promptui）と同じ流れの TUI になる。操作（導入・修復・解除）→ 対象の Discord を矢印キーで選び、結果を ✔ / ❌ で示して Enter で閉じる。TUI は依存を増やさず readline と ANSI で描く
-- 導入と修復は GitHub の最新リリースから 4 ファイルを取る。ランタイムは取らず、patcher.js が初回の起動で検証して取る。修復ではランタイム（`.next` などを含む）も消して取り直させる
+- 導入と修復は GitHub の最新リリースから 4 ファイルを取る。ランタイムは取らず、patcher.js が初回の起動で検証して取る。修復ではランタイム（`.next` などを含む）も消して取り直させる。ランタイムは全ブランチで共有なので、ほかのブランチの Discord が起動していれば修復を断る
+- 4 ファイルは署名を検証していない（公式 Vencord のインストーラと同じ）。取得先は GitHub のホスト（リダイレクト先を含む）に限り、大きさと時間に上限を設ける。配布元の侵害まで防ぐには署名が要る（残リスク）
 - 起動中の Discord は、対話では終了してよいか尋ねてから終了し、終わったら起動し直す。引数のときは `--force-close` に従う
 
 ### リリース
