@@ -60,7 +60,12 @@ export function previewInstall(deps: ServiceDeps, install: DiscordInstall) {
     return planInstall(targetFor(install.resourcesDir), pathsFor(deps.localAppData).patcher);
 }
 
-export function installTo(deps: ServiceDeps, install: DiscordInstall, source: DistSource, forceClose = false): OpResult {
+export interface InstallOptions {
+    /** 修復。VoiceCord のランタイムも消し、次の起動で取り直させる（壊れたランタイムを直すため） */
+    resetRuntime?: boolean;
+}
+
+export function installTo(deps: ServiceDeps, install: DiscordInstall, source: DistSource, forceClose = false, opts: InstallOptions = {}): OpResult {
     return withDiscordClosed(deps, install, forceClose, () => {
         const paths = pathsFor(deps.localAppData);
         const plan = planInstall(targetFor(install.resourcesDir), paths.patcher);
@@ -69,6 +74,8 @@ export function installTo(deps: ServiceDeps, install: DiscordInstall, source: Di
         // shim が指す先を先に用意する。逆だと patcher が無い状態で Discord が起動してしまう
         try {
             deployDist(paths, source);
+            // Discord が止まっている間に消す（起動中はエンジンが frida の .node を掴んでいて消せない）
+            if (opts.resetRuntime) resetRuntime(paths);
         } catch (e) {
             return { ok: false, message: `dist の配置に失敗しました: ${msg(e)}` };
         }
@@ -121,6 +128,15 @@ export function deployDist(paths: Paths, source: DistSource) {
     // コピーのときにリンクが残っていると、リポジトリの dist を書き換えてしまう
     if (existing?.isSymbolicLink()) fs.unlinkSync(paths.dist);
     fs.cpSync(src, paths.dist, { recursive: true });
+}
+
+/** VoiceCord のランタイム（用意中・入れ替え待ちの分も）を消す。patcher.js が次の起動で取り直す */
+export function resetRuntime(paths: Paths) {
+    // 開発用のリンクのときはリポジトリの dist を指しているので触らない
+    if (lstatOrNull(paths.dist)?.isSymbolicLink()) return;
+    for (const suffix of ["", ".next", ".tmp", ".old"]) {
+        fs.rmSync(join(paths.dist, `voicecord${suffix}`), { recursive: true, force: true });
+    }
 }
 
 function lstatOrNull(p: string) {
