@@ -35,16 +35,9 @@ export function MasterFader({ className }: { className?: string; }) {
         ? "効果音を自分の声より何 dB 大きく／小さく相手へ届けるか。0 dB で声と同じ大きさです。試聴やモニターで自分に聞こえる音にも同じだけ掛かります。"
         : "送信ゲイン — 相手に聞こえる音量です（試聴やモニターにも掛かります）。音量調整で声を測ると「声との差」で調整できるようになります。";
 
+    // 下端の帯に 1 行で収める。見出しは置かず、名前と説明はツールチップと値に持たせる
     return (
         <div className={classes("vc-voicecord-fader", className)}>
-            <Tooltip text={tip}>
-                {p => (
-                    <div {...p} className="vc-voicecord-spread">
-                        <Small>{rel ? "全体音量" : "全体音量（未校正）"}</Small>
-                        <Small className={faderValue > 0.05 ? "vc-voicecord-warn" : undefined}><Mono>{fmtDb(faderValue)}</Mono></Small>
-                    </div>
-                )}
-            </Tooltip>
             <div className="vc-voicecord-fader-row">
                 <Tooltip text="声とのバランスを測って、送信音量と音源ごとの音量を調整します">
                     {p => (
@@ -64,6 +57,7 @@ export function MasterFader({ className }: { className?: string; }) {
                     step={0.5}
                     markers={rel ? [0] : undefined}
                     render={fmtDb}
+                    compact
                     // ドラッグ中は音だけ変え、保存は指を離したとき（config.json への書き込みを抑える）
                     onChange={v => setMasterLive(toMaster(v))}
                     onCommit={v => {
@@ -72,6 +66,13 @@ export function MasterFader({ className }: { className?: string; }) {
                         if (rel && cal) saveCalibration({ ...cal, targetDb: v });
                     }}
                 />
+                <Tooltip text={tip}>
+                    {p => (
+                        <div {...p} className="vc-voicecord-fader-value" aria-label={rel ? "全体音量（声との差）" : "全体音量（未校正）"}>
+                            <Small className={faderValue > 0.05 ? "vc-voicecord-warn" : undefined}><Mono>{fmtDb(faderValue)}</Mono></Small>
+                        </div>
+                    )}
+                </Tooltip>
             </div>
         </div>
     );

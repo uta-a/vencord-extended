@@ -118,7 +118,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 12px;
+    padding: 6px 12px;
     border-top: 1px solid var(--border-subtle);
     flex-shrink: 0;
 }
@@ -187,6 +187,12 @@
     gap: 8px;
 }
 
+.vc-voicecord-fader-value {
+    flex: none;
+    min-width: 56px;
+    text-align: right;
+}
+
 .vc-voicecord-slider {
     min-width: 0;
 }
@@ -194,6 +200,24 @@
 /* 目盛りの文字は狭い列で折り返さない（Discord の Slider のクラス名は短縮されているので部分一致で当てる） */
 .vc-voicecord-slider [class*="markValue"] {
     white-space: nowrap;
+}
+
+/* 詰めたスライダー: 目盛りの数字の段（--bar-offset の 24px）を無くし、目盛りの線だけ残す */
+.vc-voicecord-slider-compact [class*="hasMarks_"] {
+    --bar-offset: 0px;
+}
+
+.vc-voicecord-slider-compact [class*="markValue_"] {
+    display: none;
+}
+
+.vc-voicecord-slider-compact [class*="mark_"] {
+    height: 24px;
+    justify-content: center;
+}
+
+.vc-voicecord-slider-compact [class*="markDash_"] {
+    height: 12px;
 }
 
 .vc-voicecord-fixed {
