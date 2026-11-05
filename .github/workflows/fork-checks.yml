@@ -89,3 +89,13 @@ jobs:
               run: |
                   pnpm build --standalone
                   node scripts/checkVoiceCordRuntime.mjs
+
+            # リリースのワークフロー（release.yml）と同じ組み立てが壊れていないか。公開はしない
+            - name: Build like a release
+              # pwsh は途中のコマンドの失敗を最後の 1 つでしか拾わないので、bash で 1 つずつ止める
+              shell: bash
+              run: |
+                  pnpm build --standalone --voicecord-release=ci-check
+                  node scripts/checkVoiceCordRuntime.mjs
+                  node scripts/build/installer.mjs --version ci-check
+                  ./dist/VencordExtendedInstaller.exe --version
