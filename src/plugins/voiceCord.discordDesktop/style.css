@@ -1,26 +1,260 @@
-/* 見た目は Discord の部品とクラスに任せ、ここでは寸法と並べ方だけを決める */
+/* 見た目は Discord の部品とクラス・CSS 変数に任せ、ここでは寸法と並べ方だけを決める */
 
-/* 純正サウンドボードのポップアウトと同じ幅。高さは純正の 520px を上限に中身に合わせる */
+/* ---- ポップアウト（純正サウンドボードと同じ幅 531px・高さ 520px を上限に） ---- */
+
 .vc-voicecord-picker {
     width: 531px;
     height: auto;
-    max-height: 520px;
+    max-height: 600px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 12px 0 0;
 }
 
 .vc-voicecord-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 0 16px;
+    gap: 12px;
+    padding: 12px;
+    flex-shrink: 0;
 }
 
-.vc-voicecord-state {
+.vc-voicecord-scroller {
     flex: 1;
+    min-height: 0;
+    max-height: 456px;
+    padding: 0 24px 12px 28px;
+}
+
+.vc-voicecord-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 4px 16px 16px;
+}
+
+.vc-voicecord-section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+}
+
+.vc-voicecord-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+}
+
+.vc-voicecord-band {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 12px 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--status-warning) 15%, transparent);
+    color: var(--text-feedback-warning, var(--status-warning));
+    text-align: left;
+}
+
+.vc-voicecord-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 32px 16px;
+    text-align: center;
+}
+
+.vc-voicecord-icon-button {
+    display: grid;
+    place-items: center;
+    padding: 2px;
+    border-radius: 4px;
+    background: none;
+    color: var(--interactive-normal);
+}
+
+.vc-voicecord-icon-button:hover {
+    color: var(--interactive-hover);
+}
+
+.vc-voicecord-dim {
+    opacity: 0.5;
+}
+
+/* ---- 音量のポップアウト ---- */
+
+.vc-voicecord-volume {
+    width: 288px;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+}
+
+/* ---- 全体音量のフェーダー ---- */
+
+.vc-voicecord-fader {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.vc-voicecord-fader-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.vc-voicecord-slider {
+    min-width: 0;
+}
+
+/* 目盛りの文字は狭い列で折り返さない（Discord の Slider のクラス名は短縮されているので部分一致で当てる） */
+.vc-voicecord-slider [class*="markValue"] {
+    white-space: nowrap;
+}
+
+.vc-voicecord-fixed {
+    flex: none;
+}
+
+/* ---- 設定の行 ---- */
+
+.vc-voicecord-section-title {
+    margin-bottom: 8px;
     color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.vc-voicecord-row {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.vc-voicecord-row-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.vc-voicecord-row-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.vc-voicecord-row-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.vc-voicecord-row-extra {
+    margin-top: 8px;
+}
+
+/* ---- 汎用 ---- */
+
+.vc-voicecord-grow {
+    flex: 1;
+    min-width: 0;
+}
+
+.vc-voicecord-spread {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.vc-voicecord-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.vc-voicecord-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.vc-voicecord-center {
+    text-align: center;
+    align-items: center;
+}
+
+.vc-voicecord-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px;
+    border-radius: 8px;
+    background: var(--background-mod-subtle, var(--background-secondary));
+    border: 1px solid var(--border-subtle);
+}
+
+.vc-voicecord-card.vc-voicecord-spread,
+.vc-voicecord-subcard.vc-voicecord-spread {
+    flex-direction: row;
+}
+
+.vc-voicecord-subcard {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--background-mod-normal, var(--background-tertiary));
+}
+
+.vc-voicecord-muted {
+    color: var(--text-muted);
+}
+
+.vc-voicecord-warn {
+    color: var(--text-feedback-warning, var(--status-warning));
+}
+
+.vc-voicecord-ok {
+    color: var(--text-feedback-positive, var(--status-positive));
+}
+
+.vc-voicecord-ng {
+    color: var(--text-feedback-critical, var(--status-danger));
+}
+
+.vc-voicecord-accent {
+    color: var(--text-brand, var(--brand-500));
+}
+
+.vc-voicecord-mono {
+    font-family: var(--font-code);
+    font-variant-numeric: tabular-nums;
+}
+
+.vc-voicecord-break {
+    word-break: break-all;
+}
+
+.vc-voicecord-hidden {
+    visibility: hidden;
+}
+
+.vc-voicecord-btn-inner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .vc-voicecord-dot {
@@ -31,34 +265,203 @@
     background: var(--text-muted);
 }
 
-.vc-voicecord-dot-attached {
+.vc-voicecord-conn-connected {
     background: var(--status-positive);
 }
 
-.vc-voicecord-dot-searching {
+.vc-voicecord-conn-waiting,
+.vc-voicecord-conn-switching {
     background: var(--status-warning);
 }
 
-.vc-voicecord-dot-failed {
+.vc-voicecord-conn-disconnected {
     background: var(--status-danger);
 }
 
-.vc-voicecord-problem {
-    padding: 0 12px;
-    color: var(--text-feedback-critical, var(--status-danger));
+.vc-voicecord-dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 12px;
+    margin: 8px 0;
+    font-size: 12px;
+    color: var(--text-default, var(--text-normal));
 }
 
-.vc-voicecord-empty {
-    padding: 0 16px 12px;
+.vc-voicecord-dl dt {
     color: var(--text-muted);
 }
 
-/* 純正と同じく、中身の幅を約 475px にする */
-.vc-voicecord-scroller {
-    flex: 1;
-    min-height: 0;
-    padding: 0 24px 16px 28px;
+.vc-voicecord-dl dd {
+    min-width: 0;
+    word-break: break-all;
 }
+
+.vc-voicecord-problems {
+    white-space: pre-wrap;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-default, var(--text-normal));
+    background: color-mix(in srgb, var(--status-danger) 12%, transparent);
+}
+
+.vc-voicecord-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 6px;
+}
+
+.vc-voicecord-notice-warning {
+    color: var(--text-feedback-warning, var(--status-warning));
+    background: color-mix(in srgb, var(--status-warning) 12%, transparent);
+}
+
+.vc-voicecord-notice-danger {
+    color: var(--text-feedback-critical, var(--status-danger));
+    background: color-mix(in srgb, var(--status-danger) 12%, transparent);
+}
+
+.vc-voicecord-notice-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.vc-voicecord-meter {
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--background-mod-strong, var(--background-modifier-accent));
+}
+
+.vc-voicecord-meter-thin {
+    height: 6px;
+}
+
+.vc-voicecord-meter-fill {
+    height: 100%;
+    background: var(--brand-500);
+    transition: width 75ms linear;
+}
+
+.vc-voicecord-meter-hot {
+    background: var(--status-warning);
+}
+
+.vc-voicecord-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* ---- 音量調整の表 ---- */
+
+.vc-voicecord-table-scroller {
+    max-height: 168px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+}
+
+.vc-voicecord-table {
+    width: 100%;
+    font-size: 12px;
+    color: var(--text-default, var(--text-normal));
+    border-collapse: collapse;
+}
+
+.vc-voicecord-table th {
+    position: sticky;
+    top: 0;
+    padding: 6px 8px;
+    font-weight: 500;
+    text-align: right;
+    color: var(--text-muted);
+    background: var(--background-base-low, var(--background-secondary));
+}
+
+.vc-voicecord-table td {
+    padding: 4px 8px;
+    text-align: right;
+    font-family: var(--font-code);
+    border-top: 1px solid var(--border-subtle);
+}
+
+.vc-voicecord-table th:first-child,
+.vc-voicecord-table td:first-child {
+    max-width: 0;
+    width: 50%;
+    text-align: left;
+    font-family: inherit;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---- 入場サウンド ---- */
+
+.vc-voicecord-entry {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 240px;
+    gap: 20px;
+    margin-top: 12px;
+}
+
+.vc-voicecord-entry-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.vc-voicecord-entry-scroller {
+    height: min(260px, 40vh);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    padding: 4px;
+}
+
+.vc-voicecord-entry-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.vc-voicecord-entry-pick {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+    padding: 6px 10px;
+    border-radius: 4px;
+    background: none;
+    color: var(--text-default, var(--text-normal));
+    text-align: left;
+}
+
+.vc-voicecord-entry-pick:hover {
+    background: var(--background-mod-subtle, var(--background-modifier-hover));
+}
+
+.vc-voicecord-entry-selected {
+    color: var(--text-brand, var(--brand-500));
+    background: color-mix(in srgb, var(--brand-500) 12%, transparent);
+}
+
+.vc-voicecord-entry-side {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.vc-voicecord-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* ---- 予備の FAB ---- */
 
 .vc-voicecord-fab-wrapper {
     position: fixed;

@@ -29,7 +29,8 @@ export function VoiceCordButton() {
             renderPopout={() => <SoundboardPopout />}
         >
             {() => (
-                <div ref={ref}>
+                // カメラボタンを隠す CSS の目印（discordIntegration.tsx）
+                <div ref={ref} className="vc-voicecord-panel-slot">
                     <Tooltip text="VoiceCord" shouldShow={!show}>
                         {tooltipProps => (
                             <DiscordButton

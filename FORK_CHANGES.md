@@ -12,8 +12,8 @@ upstream から merge するときに衝突しうる場所はここに載って�
 <!-- 形式: 「- `パス` — 理由」。CI はバッククォート内のパスだけを読みます -->
 
 - `README.md` — 冒頭に非公式 fork の告知
-- `package.json` — 版表記（`-ext.<連番>`）、`inject` / `uninject` をインストーラ CLI に差し替え、`test:installer` / `test:voicecord` を追加、frida（optional）と vitest の依存
-- `pnpm-workspace.yaml` — catalog に frida と vitest、`allowBuilds` に frida
+- `package.json` — 版表記（`-ext.<連番>`）、`inject` / `uninject` をインストーラ CLI に差し替え、`test:installer` / `test:voicecord` を追加、frida（optional）・vitest・zustand の依存
+- `pnpm-workspace.yaml` — catalog に frida・vitest・zustand、`allowBuilds` に frida
 - `pnpm-lock.yaml` — 上記の依存の追加（upstream の取り込みで衝突したら、upstream 側を採ってから `pnpm install` で作り直す）
 - `scripts/build/build.mjs` — VoiceCord のエンジンと frida ランタイムのビルドを追加（本体は `scripts/build/voicecord.mjs`、`--no-voicecord` で無効化）
 - `src/plugins/_core/settings.tsx` — 設定画面の見出しを Vencord Extended に
