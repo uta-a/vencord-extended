@@ -20,8 +20,17 @@ export function needApi() {
     return state.api;
 }
 
+const tabsPatchedListeners = new Set<() => void>();
+
 export function markTabsPatched() {
     state.tabsPatched = true;
+    for (const cb of tabsPatchedListeners) cb();
+}
+
+/** パッチが（遅れて）当たったことを受け取る。予備のボタンを引っ込めるのに使う */
+export function onTabsPatched(cb: () => void) {
+    tabsPatchedListeners.add(cb);
+    return () => void tabsPatchedListeners.delete(cb);
 }
 
 export function markTabsSeen() {

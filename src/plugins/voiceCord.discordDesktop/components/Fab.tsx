@@ -5,7 +5,7 @@
  */
 
 import ErrorBoundary from "@components/ErrorBoundary";
-import { state } from "@plugins/voiceCord.discordDesktop/state";
+import { onTabsPatched, state } from "@plugins/voiceCord.discordDesktop/state";
 import { createRoot, Popout, SelectedChannelStore, Tooltip, useEffect, useRef, useState, useStateFromStores } from "@webpack/common";
 import type { Root } from "react-dom/client";
 
@@ -25,6 +25,9 @@ function Fab() {
     const [broken, setBroken] = useState(false);
     const [show, setShow] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
+
+    // 確かめた後でパッチが当たった（対象のモジュールが遅れて読み込まれた）ら、予備のボタンを引っ込める
+    useEffect(() => onTabsPatched(() => setBroken(false)), []);
 
     useEffect(() => {
         if (!inVc) return;

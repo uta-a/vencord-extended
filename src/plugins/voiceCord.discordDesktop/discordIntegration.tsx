@@ -5,12 +5,11 @@
  */
 
 import ErrorBoundary from "@components/ErrorBoundary";
-import { findCssClassesLazy } from "@webpack";
+import { filters, findCssClassesLazy, mapMangledCssClasses, waitFor } from "@webpack";
 import { Clickable, SelectedChannelStore, Tooltip } from "@webpack/common";
 import type { MouseEvent } from "react";
 
 import { isSoundboardSoundId } from "../../voicecord/shared/soundboard";
-import { PanelClasses } from "./components/discord";
 import { FilledStopIcon } from "./components/icons";
 import { isTrustedInput } from "./lib/trusted";
 import { playingSoundboardIds, store } from "./store";
@@ -93,10 +92,28 @@ const UNLOCK_CSS = [
 ].map(rule => `html[${UNLOCK_ATTR}] ${rule.replace(/,/g, `,html[${UNLOCK_ATTR}] `)}`).join("");
 
 // ビデオボタンを隠す。音声パネルのボタン列の先頭の子（純正の並びではカメラ）だけに効かせる。
-// 「actionButtons_」はほかの部品にもあるので、部分一致ではなく音声パネルの CSS モジュールのクラスで当てる
+// 「actionButtons_」はほかの部品にもあるので、部分一致ではなく音声パネルの CSS モジュールのクラスで当てる。
+// そのモジュールは起動時にまだ読み込まれていないことがある。findCssClassesLazy は見つからなかった結果を
+// 覚えてしまうので、waitFor で読み込まれた時点に受け取る
+const PANEL_CLASSES = ["voiceUsers", "actionButtons", "button", "buttonColor", "buttonContents", "buttonIcon", "greyButtonActive"];
+let actionButtonsClass: string | null = null;
+const actionButtonsListeners = new Set<() => void>();
+let waitingActionButtons = false;
+
+function watchActionButtonsClass(onFound: () => void) {
+    actionButtonsListeners.add(onFound);
+    if (!waitingActionButtons && actionButtonsClass === null) {
+        waitingActionButtons = true;
+        waitFor(filters.byClassNames(...PANEL_CLASSES), m => {
+            actionButtonsClass = mapMangledCssClasses(m, ["actionButtons"]).actionButtons?.split(" ")[0] ?? null;
+            for (const cb of actionButtonsListeners) cb();
+        });
+    }
+    return () => void actionButtonsListeners.delete(onFound);
+}
+
 function cameraCss() {
-    const row = PanelClasses.actionButtons?.split(" ")[0];
-    return row ? `html[${HIDE_CAMERA_ATTR}] .${row} > :first-child{display:none !important}` : "";
+    return actionButtonsClass ? `html[${HIDE_CAMERA_ATTR}] .${actionButtonsClass} > :first-child{display:none !important}` : "";
 }
 
 // VoiceCord で鳴らしている純正サウンドボードのサウンドに、純正の再生中と同じ緑の枠を付ける
@@ -123,8 +140,10 @@ export function watchSoundboardStyles() {
     };
     apply();
     const off = store.subscribe(apply);
+    const offClass = watchActionButtonsClass(apply);
     return () => {
         off();
+        offClass();
         style.remove();
         root.removeAttribute(HIDE_CAMERA_ATTR);
         root.removeAttribute(UNLOCK_ATTR);

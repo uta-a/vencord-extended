@@ -39,7 +39,6 @@ export const DiscordSearchBar: ComponentType<{
 }> = findComponentByCodeLazy('role:"searchbox"', "clearable:null!=");
 
 // CSS モジュールは書き出しのキーが短縮されているので、クラス名の接頭辞で引く
-export const PanelClasses = findCssClassesLazy("voiceUsers", "actionButtons", "button", "buttonColor", "buttonContents", "buttonIcon", "greyButtonActive");
 export const PickerClasses = findCssClassesLazy("picker", "inExpressionPicker");
 // 絵文字ピッカー（GIF・スタンプ・絵文字・サウンドボード）のタブ
 export const TabClasses = findCssClassesLazy("nav", "navList", "navItem", "navButton", "navButtonActive", "soundboardContainer");
