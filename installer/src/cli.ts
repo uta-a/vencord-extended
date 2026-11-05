@@ -86,7 +86,11 @@ const ACTION_LABEL: Record<Action, string> = {
     uninstall: "解除"
 };
 
-async function pickInstall(installs: DiscordInstall[], branch: string | undefined, action: Action, interactive: boolean): Promise<DiscordInstall> {
+/**
+ * interactive: 引数なしの対話。1 つしか無くても選ばせる（何に入れるかを見せる）。
+ * canAsk: 引数付きでも端末なら、複数あるときは尋ねる（pnpm inject など）
+ */
+async function pickInstall(installs: DiscordInstall[], branch: string | undefined, action: Action, interactive: boolean, canAsk: boolean): Promise<DiscordInstall> {
     if (branch) {
         const found = installs.find(i => i.spec.branch === branch);
         if (!found) throw new Error(`${branch} の Discord が見つかりません`);
@@ -94,7 +98,7 @@ async function pickInstall(installs: DiscordInstall[], branch: string | undefine
     }
     if (installs.length === 0) throw new Error("Discord が見つかりません。Discord をインストールしてから、もう一度実行してください");
     if (installs.length === 1 && !interactive) return installs[0];
-    if (!interactive) throw new Error("Discord が複数あります。--branch で指定してください");
+    if (!canAsk) throw new Error("Discord が複数あります。--branch で指定してください");
     return select(`${ACTION_LABEL[action]}する Discord を選んでください`, installs.map(i => ({
         label: `${i.spec.label} ${i.version}`,
         hint: describeInstall(i),
@@ -114,6 +118,7 @@ async function runInstall(deps: ServiceDeps, install: DiscordInstall, action: "i
     forceClose: boolean;
     yes: boolean;
     interactive: boolean;
+    canAsk: boolean;
     dev: boolean;
     from: string | undefined;
     repo: string;
@@ -125,7 +130,7 @@ async function runInstall(deps: ServiceDeps, install: DiscordInstall, action: "i
         warn(`${install.spec.label} から次のものを外して、Vencord Extended に置き換えます:`);
         for (const p of plan.replaces) console.log(`    - ${p}`);
         if (!opts.yes) {
-            if (!opts.interactive) throw new Error("置き換えの確認ができません。--yes を付けて実行してください");
+            if (!opts.canAsk) throw new Error("置き換えの確認ができません。--yes を付けて実行してください");
             if (!await confirm("続けますか？")) throw new Cancelled();
         }
     }
@@ -215,7 +220,8 @@ async function main(): Promise<void> {
     }
     if (action === null) return;
 
-    const install = await pickInstall(installs, values.branch, action, interactive);
+    const canAsk = isInteractive();
+    const install = await pickInstall(installs, values.branch, action, interactive, canAsk);
     if (action === "uninstall") {
         const forceClose = await resolveForceClose(deps, install, values["force-close"] === true, interactive);
         report(uninstallFrom(deps, install, forceClose));
@@ -225,6 +231,7 @@ async function main(): Promise<void> {
         forceClose: values["force-close"] === true,
         yes: values.yes === true,
         interactive,
+        canAsk,
         dev: values.dev === true,
         from: values.from,
         repo: values.repo ?? DEFAULT_REPO
