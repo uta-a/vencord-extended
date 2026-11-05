@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 
 import { DIST_FILES, downloadLatestDist, pickDistAssets, type Release } from "../src/release";
 import { pathsFor, resetRuntime } from "../src/service";
-import { moveIndex, renderSelect } from "../src/tui";
+import { displayWidth, moveIndex, renderSelect, renderSelected, screenRows, SELECT_HELP } from "../src/tui";
 
 const release = (names: readonly string[]): Release => ({
     tag_name: "v1.0.0-ext.2",
@@ -82,13 +82,25 @@ describe("tui", () => {
         assert.equal(moveIndex(0, "down", 0), 0);
     });
 
-    it("選んでいる行に印を付ける", () => {
+    it("promptui と同じ形で描き、選んでいる行に印を付ける", () => {
         // eslint-disable-next-line no-control-regex
         const plain = (s: string) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
         const lines = renderSelect("何をしますか？", [{ label: "導入", value: 1 }, { label: "解除", value: 2, hint: "素に戻す" }], 1).map(plain);
-        assert.match(lines[0], /何をしますか？/);
-        assert.equal(lines[1], "  導入");
-        assert.equal(lines[2], "❯ 解除 素に戻す");
+        assert.equal(lines[0], SELECT_HELP);
+        assert.equal(lines[1], "? 何をしますか？:");
+        assert.equal(lines[2], "    導入");
+        assert.equal(lines[3], "  ▸ 解除 素に戻す");
+        assert.equal(plain(renderSelected("はい", "続けますか？")), "✔ 続けますか？ はい");
+        assert.equal(plain(renderSelected("導入")), "✔ 導入");
+    });
+
+    it("全角は 2 桁として数え、折り返した行も描き直しで消せる行数に入れる", () => {
+        assert.equal(displayWidth("abc"), 3);
+        assert.equal(displayWidth("導入する Discord"), 16);
+        assert.equal(displayWidth(`\x1b[1m導入\x1b[22m`), 4);
+        // 半角 80 桁の窓で、全角 50 文字（100 桁）の行は 2 行を占める
+        assert.equal(screenRows(["あ".repeat(50), "x"], 80), 3);
+        assert.equal(screenRows(["", "x".repeat(80), "x".repeat(81)], 80), 4);
     });
 });
 

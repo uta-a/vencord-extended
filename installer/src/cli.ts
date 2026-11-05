@@ -101,7 +101,7 @@ async function pickInstall(installs: DiscordInstall[], branch: string | undefine
     if (!canAsk) throw new Error("Discord が複数あります。--branch で指定してください");
     return select(`${ACTION_LABEL[action]}する Discord を選んでください`, installs.map(i => ({
         label: `${i.spec.label} ${i.version}`,
-        hint: describeInstall(i),
+        hint: `(${describeInstall(i)})`,
         value: i
     })));
 }
@@ -211,10 +211,11 @@ async function main(): Promise<void> {
         console.log(color.bold(`Vencord Extended インストーラ ${VERSION}`));
         console.log(color.dim("Vencord の非公式 fork です。VoiceCord（VC にサウンドを流す機能）が入っています"));
         console.log();
-        action = await select("何をしますか？", [
-            { label: "Vencord Extended を導入する", value: "install" as const },
-            { label: "修復する", hint: "最新のファイルと VoiceCord のランタイムを取り直す", value: "repair" as const },
-            { label: "解除する", hint: "素の Discord に戻す", value: "uninstall" as const },
+        // 公式の CLI 版と同じく、操作名だけを並べる（説明は --help と手順書に書く）
+        action = await select("何をしますか？（Enter で決定）", [
+            { label: "Vencord Extended を導入", value: "install" as const },
+            { label: "Vencord Extended を修復", value: "repair" as const },
+            { label: "Vencord Extended を解除", value: "uninstall" as const },
             { label: "終了", value: "quit" as const }
         ]);
         if (action === "quit") return;
