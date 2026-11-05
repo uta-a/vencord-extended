@@ -776,6 +776,24 @@ describe('UI store のサウンドフォルダ（複数）', () => {
     await job
     expect(labels(store.getState().sounds)).toEqual(['C:/a:x', 'C:/a:y'])
   })
+  it('走査の途中で resetStore したら、古い走査の結果で一覧を書き戻さない', async () => {
+    const { store, bindApi, resetStore } = await import('../../src/plugins/voiceCord.discordDesktop/store')
+    let release: () => void = () => {}
+    const base = createMockApi()
+    bindApi({
+      ...base,
+      getConfig: async () => ({ ...(await base.getConfig()), folders: ['C:/a'] }),
+      scanFolder: (folder) => new Promise(r => { release = () => r((FILES[folder] ?? []).map(l => item(folder, l))) })
+    })
+    const job = store.getState().init()
+    await new Promise(r => setTimeout(r, 0))
+    resetStore()
+    release()
+    await job
+    expect(store.getState().sounds).toEqual([])
+    expect(store.getState().folders).toEqual([])
+  })
+
   it('最初の読み込みの途中でフォルダを外しても、残りのフォルダの一覧は読み直す', async () => {
     const { store } = await setup(['C:/a', 'C:/b'])
     store.setState({ sounds: [] })

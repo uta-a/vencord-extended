@@ -1323,6 +1323,8 @@ const INITIAL_STATE = store.getState();
 // プラグインの stop() で呼ぶ。鳴っている音とタイマーを止め、次の start() で init からやり直せるようにする
 export function resetStore(): void {
   initStarted = false;
+  // 走査中の結果を捨てる（止めた後に古い一覧が戻らないように）
+  scanSeq++;
   lifeGen++;
   stopGen++;
   connectSeq++;

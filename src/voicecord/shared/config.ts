@@ -141,12 +141,13 @@ export function sanitize(data: AppConfig, dflt: AppConfig): AppConfig {
 }
 
 /**
- * 単一フォルダの時代の設定（folders が無い）を移す。folder を folders の 1 つ目にし、
+ * 単一フォルダの時代の設定（folders が無いか、配列でない）を移す。folder を folders の 1 つ目にし、
  * 音源別音量と入場サウンドのキー（フォルダ内の名前だけ）をそのフォルダの ID に直す。
  * folder が無いか壊れていれば、当時も既定のフォルダを使っていたので既定のフォルダとして直す
  */
 function migrateLegacyFolder(loaded: Record<string, unknown>, dflt: AppConfig): Record<string, unknown> {
-  if ("folders" in loaded) return loaded;
+  // folders が壊れている（配列でない）ときも移す。そうしないと有効な旧 folder と旧形式のキーを失う
+  if (Array.isArray(loaded.folders)) return loaded;
   const folder = typeof loaded.folder === "string" && loaded.folder !== "" ? loaded.folder : dflt.folders[0];
   if (folder === undefined) return loaded;
   const out: Record<string, unknown> = { ...loaded, folders: [folder] };

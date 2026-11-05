@@ -159,6 +159,18 @@ describe('parseConfigText', () => {
     expect('folder' in config).toBe(false)
   })
 
+  it('folders が壊れていて旧形式の folder が有効なら、旧形式として移す（旧設定を失わない）', () => {
+    for (const folders of [null, 'D:/x', 3, {}]) {
+      const { config } = parseConfigText(
+        JSON.stringify({ folder: win('D:/custom'), folders, sourceVolumes: { ding: 0.2 }, entrySoundSrcId: 'ding' }),
+        DFLT
+      )
+      expect(config.folders).toEqual([win('D:/custom')])
+      expect(config.sourceVolumes).toEqual({ 'd:/custom|ding': 0.2 })
+      expect(config.entrySoundSrcId).toBe('d:/custom|ding')
+    }
+  })
+
   it('folders から空・非文字列・同じフォルダの重複（大文字小文字と区切りの違い）を落とす', () => {
     const { config } = parseConfigText(
       JSON.stringify({ folders: [win('D:/A'), '', 3, 'd:/a/', win('D:/B')] }),
