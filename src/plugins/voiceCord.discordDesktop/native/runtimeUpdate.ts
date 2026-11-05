@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import path from "path";
 
 import { readZip } from "./zip";
@@ -46,13 +46,16 @@ export interface RuntimeFs {
     closeSync(fd: number): void;
     statSync(p: string): { mtimeMs: number; };
     unlinkSync(p: string): void;
+    linkSync(existing: string, newPath: string): void;
+    readdirSync(p: string): string[];
 }
 
 export const MANIFEST = "manifest.json";
 const ENGINE = "engine.mjs";
 
-// ロックを持ったまま落ちたプロセスの残りと見なす時間。ロックの中は rename と小さな削除だけなので十分長い
-const LOCK_STALE_MS = 2 * 60_000;
+// 持ち主が生きていても、これより古いロックは残りと見なす（pid の使い回しで回収できなくなるのを防ぐ）。
+// ロックの中は rename と小さな削除だけなので十分長い
+const LOCK_STALE_MS = 10 * 60_000;
 
 export type RuntimeState = "ok" | "missing" | "outdated";
 
@@ -71,18 +74,87 @@ export function runtimeState(fs: RuntimeFs, dir: string, required: RequiredRunti
     return manifestVersion(fs, dir) === required.version ? "ok" : "outdated";
 }
 
-/** ランタイムの置き場所の排他。ほかのプロセスが持っていれば fn を呼ばずに null を返す */
-export function withRuntimeLock<T>(fs: RuntimeFs, dir: string, fn: () => T): T | null {
-    const lock = `${dir}.lock`;
+/** そのプロセスが生きているか（権限が無いだけなら生きている） */
+export function pidAlive(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (e) {
+        return (e as NodeJS.ErrnoException).code === "EPERM";
+    }
+}
+
+interface LockOwner {
+    pid: number;
+    token: string;
+}
+
+function readOwner(fs: RuntimeFs, lock: string): LockOwner | null {
+    try {
+        const o = JSON.parse(fs.readFileSync(lock, "utf8")) as Partial<LockOwner>;
+        return typeof o.pid === "number" && typeof o.token === "string" ? { pid: o.pid, token: o.token } : null;
+    } catch {
+        return null;
+    }
+}
+
+/** ロックを作る。ほかが持っていれば false */
+function tryCreateLock(fs: RuntimeFs, lock: string, token: string): boolean {
     let fd: number;
     try {
         fd = fs.openSync(lock, "wx");
     } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+        if ((e as NodeJS.ErrnoException).code === "EEXIST") return false;
+        throw e;
+    }
+    try {
+        fs.closeSync(fd);
+    } catch { }
+    try {
+        fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, token } satisfies LockOwner));
+    } catch (e) {
         try {
-            if (Date.now() - fs.statSync(lock).mtimeMs < LOCK_STALE_MS) return null;
             fs.unlinkSync(lock);
-            fd = fs.openSync(lock, "wx");
+        } catch { }
+        throw e;
+    }
+    return true;
+}
+
+/**
+ * 持ち主が終わったロック（または古すぎるロック）を片付ける。
+ * 複数のプロセスが同時に片付けても、別のプロセスが作り直したばかりのロックを消さないよう、
+ * 自分だけの名前へ rename してから中身を確かめ、見たものと違えば元に戻す
+ */
+function reapStaleLock(fs: RuntimeFs, lock: string, token: string) {
+    const seen = fs.readFileSync(lock, "utf8");
+    const seenMtime = fs.statSync(lock).mtimeMs;
+    const owner = readOwner(fs, lock);
+    // 中身がまだ無いのは、作った直後で書き込み前のロック。時間だけで判断する
+    const stale = (owner !== null && !pidAlive(owner.pid)) || Date.now() - seenMtime >= LOCK_STALE_MS;
+    if (!stale) return;
+    const reap = `${lock}.reap-${token}`;
+    fs.renameSync(lock, reap); // ほかのプロセスが先に片付けていれば失敗する
+    if (fs.readFileSync(reap, "utf8") === seen && fs.statSync(reap).mtimeMs === seenMtime) {
+        fs.unlinkSync(reap);
+        return;
+    }
+    // 見てから rename するまでの間に、ほかのプロセスが作り直したロックだった。戻す（新しいロックがあれば戻さない）
+    try {
+        fs.linkSync(reap, lock);
+    } finally {
+        fs.unlinkSync(reap);
+    }
+}
+
+/** ランタイムの置き場所の排他。ほかのプロセスが持っていれば fn を呼ばずに null を返す */
+export function withRuntimeLock<T>(fs: RuntimeFs, dir: string, fn: () => T): T | null {
+    const lock = `${dir}.lock`;
+    const token = `${process.pid}-${randomUUID()}`;
+    if (!tryCreateLock(fs, lock, token)) {
+        try {
+            reapStaleLock(fs, lock, token);
+            if (!tryCreateLock(fs, lock, token)) return null;
         } catch {
             return null;
         }
@@ -90,9 +162,29 @@ export function withRuntimeLock<T>(fs: RuntimeFs, dir: string, fn: () => T): T |
     try {
         return fn();
     } finally {
-        fs.closeSync(fd);
+        // 自分のロックのときだけ消す（古いと見なされて片付けられ、ほかのプロセスが持ち直している場合がある）
         try {
-            fs.unlinkSync(lock);
+            if (readOwner(fs, lock)?.token === token) fs.unlinkSync(lock);
+        } catch { }
+    }
+}
+
+/** 展開の途中で落ちたプロセスの一時フォルダ（`<dir>.tmp-<pid>-<時刻>`）を消す。持ち主が生きていれば残す */
+export function removeOrphanTmp(fs: RuntimeFs, dir: string) {
+    const parent = path.dirname(dir);
+    const prefix = `${path.basename(dir)}.tmp-`;
+    let names: string[];
+    try {
+        names = fs.readdirSync(parent);
+    } catch {
+        return;
+    }
+    for (const name of names) {
+        if (!name.startsWith(prefix)) continue;
+        const pid = Number(name.slice(prefix.length).split("-")[0]);
+        if (Number.isInteger(pid) && pid > 0 && pidAlive(pid)) continue;
+        try {
+            fs.rmSync(path.join(parent, name), { recursive: true, force: true });
         } catch { }
     }
 }
@@ -109,6 +201,7 @@ export function applyStagedRuntime(fs: RuntimeFs, dir: string, required: Require
 function applyUnlocked(fs: RuntimeFs, dir: string, required: RequiredRuntime): boolean {
     const next = `${dir}.next`;
     const old = `${dir}.old`;
+    removeOrphanTmp(fs, dir);
     // 前回の入れ替えが途中で止まり、ランタイムが無いまま旧版（.old）だけ残っていたら、先に戻す。
     // ここで .old を消すと、唯一の旧版を失う
     if (!fs.existsSync(dir) && fs.existsSync(old)) fs.renameSync(old, dir);
@@ -135,6 +228,8 @@ function applyUnlocked(fs: RuntimeFs, dir: string, required: RequiredRuntime): b
     return true;
 }
 
+const LOCK_RETRY_MS = 250;
+
 export function sha256Hex(buf: Buffer): string {
     return createHash("sha256").update(buf).digest("hex");
 }
@@ -146,14 +241,15 @@ function throwIfAborted(signal: AbortSignal | undefined) {
 
 /**
  * zip を取得して検証し、`<dir>.next` に展開する。検証に通らなければ何も残さずに throw する。
- * ほかのプロセスが `.next` を置いている最中なら、こちらの展開は捨てる（同じ版をあちらが置く）
+ * ほかのプロセスがロックを持っていれば空くまで待ち、lockWaitMs を過ぎたら throw する
  */
 export async function stageRuntime(
     fs: RuntimeFs,
     dir: string,
     required: RequiredRuntime,
     fetchZip: (url: string, signal?: AbortSignal) => Promise<Buffer>,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    lockWaitMs = 10_000
 ): Promise<void> {
     throwIfAborted(signal);
     const buf = await fetchZip(required.url, signal);
@@ -179,13 +275,20 @@ export async function stageRuntime(
             fs.mkdirSync(path.dirname(to), { recursive: true });
             fs.writeFileSync(to, e.data);
         }
-        throwIfAborted(signal);
-        withRuntimeLock(fs, dir, () => {
-            fs.rmSync(`${dir}.next`, { recursive: true, force: true });
-            fs.renameSync(tmp, `${dir}.next`);
-        });
+        // ロックの中は rename だけなので、ほかのプロセスが持っていても少し待てば空く
+        for (let waited = 0; ; waited += LOCK_RETRY_MS) {
+            throwIfAborted(signal);
+            const placed = withRuntimeLock(fs, dir, () => {
+                fs.rmSync(`${dir}.next`, { recursive: true, force: true });
+                fs.renameSync(tmp, `${dir}.next`);
+                return true;
+            });
+            if (placed) break;
+            if (waited >= lockWaitMs) throw new Error("ほかの Discord がランタイムを更新しているため、新しいランタイムを置けませんでした");
+            await new Promise(r => setTimeout(r, LOCK_RETRY_MS));
+        }
     } finally {
-        // 名前を変えられたら残っていない。見送ったときと失敗したときはここで消える
+        // 名前を変えられたら残っていない。失敗したときはここで消える
         fs.rmSync(tmp, { recursive: true, force: true });
     }
 }
@@ -201,7 +304,7 @@ export async function downloadLimited(url: string, opts: {
     fetch?: typeof fetch;
 }): Promise<Buffer> {
     const signals = [AbortSignal.timeout(opts.timeoutMs), ...(opts.signal ? [opts.signal] : [])];
-    const res = await (opts.fetch ?? fetch)(url, { signal: AbortSignal.any(signals) });
+    const res = await (opts.fetch ?? fetch)(url, { signal: anySignal(signals) });
     if (!res.ok) throw new Error(`${url} を取得できませんでした（${res.status} ${res.statusText}）`);
     const declared = Number(res.headers.get("content-length"));
     if (Number.isFinite(declared) && declared > opts.maxBytes) throw new Error(`取得するファイルが大きすぎます（上限 ${opts.maxBytes} バイト）`);
@@ -220,4 +323,18 @@ export async function downloadLimited(url: string, opts: {
         chunks.push(value);
     }
     return Buffer.concat(chunks);
+}
+
+/** AbortSignal.any（Node 20.3 / 18.17 から）が無い Electron でも動くように */
+export function anySignal(signals: AbortSignal[], native: boolean = typeof AbortSignal.any === "function"): AbortSignal {
+    if (native) return AbortSignal.any(signals);
+    const ac = new AbortController();
+    for (const s of signals) {
+        if (s.aborted) {
+            ac.abort(s.reason);
+            break;
+        }
+        s.addEventListener("abort", () => ac.abort(s.reason), { once: true });
+    }
+    return ac.signal;
 }

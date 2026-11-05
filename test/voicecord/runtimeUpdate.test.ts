@@ -228,3 +228,101 @@ describe('downloadLimited', () => {
     expect(ok.length).toBe(10240)
   })
 })
+
+describe('ロック（2 回目のレビューの指摘）', () => {
+  // Windows の pid は 4 の倍数、Linux の上限は 4194304。どちらでも存在しない pid
+  const DEAD_PID = 999999999
+  const lockOf = (pid: number, token: string) => JSON.stringify({ pid, token })
+
+  it('持ち主が終わったロックは片付けて取る', async () => {
+    const { withRuntimeLock } = await import('../../src/plugins/voiceCord.discordDesktop/native/runtimeUpdate')
+    fs.writeFileSync(`${dir}.lock`, lockOf(DEAD_PID, 'dead'))
+    expect(withRuntimeLock(fs, dir, () => 'ran')).toBe('ran')
+    expect(fs.existsSync(`${dir}.lock`)).toBe(false)
+    expect(fs.readdirSync(tmp)).toEqual([])
+  })
+
+  it('持ち主が生きていて新しいロックは奪わない', async () => {
+    const { withRuntimeLock } = await import('../../src/plugins/voiceCord.discordDesktop/native/runtimeUpdate')
+    fs.writeFileSync(`${dir}.lock`, lockOf(process.pid, 'alive'))
+    expect(withRuntimeLock(fs, dir, () => 'ran')).toBe(null)
+    expect(fs.readFileSync(`${dir}.lock`, 'utf8')).toBe(lockOf(process.pid, 'alive'))
+  })
+
+  it('片付けの間にほかのプロセスが作り直したロックは消さずに戻す', async () => {
+    const { withRuntimeLock } = await import('../../src/plugins/voiceCord.discordDesktop/native/runtimeUpdate')
+    fs.writeFileSync(`${dir}.lock`, lockOf(DEAD_PID, 'dead'))
+    const fresh = lockOf(process.pid, 'fresh')
+    // 自分が古いロックを見てから rename するまでの間に、ほかのプロセスが片付けて作り直した
+    const racing = {
+      ...fs,
+      renameSync: (from: string, to: string) => {
+        if (from === `${dir}.lock` && to.includes('.reap-')) {
+          fs.unlinkSync(from)
+          fs.writeFileSync(from, fresh)
+        }
+        fs.renameSync(from, to)
+      }
+    }
+    expect(withRuntimeLock(racing, dir, () => 'ran')).toBe(null)
+    expect(fs.readFileSync(`${dir}.lock`, 'utf8')).toBe(fresh)
+    expect(fs.readdirSync(tmp)).toEqual(['voicecord.lock'])
+  })
+
+  it('解放のとき、自分のものでないロックは消さない', async () => {
+    const { withRuntimeLock } = await import('../../src/plugins/voiceCord.discordDesktop/native/runtimeUpdate')
+    withRuntimeLock(fs, dir, () => {
+      // 古いと見なされて片付けられ、ほかのプロセスが持ち直した
+      fs.unlinkSync(`${dir}.lock`)
+      fs.writeFileSync(`${dir}.lock`, lockOf(process.pid, 'other'))
+    })
+    expect(fs.readFileSync(`${dir}.lock`, 'utf8')).toBe(lockOf(process.pid, 'other'))
+  })
+
+  it('closeSync が失敗してもロックを残さない', async () => {
+    const { withRuntimeLock } = await import('../../src/plugins/voiceCord.discordDesktop/native/runtimeUpdate')
+    const badClose = { ...fs, closeSync: () => { throw new Error('EBADF') } }
+    expect(withRuntimeLock(badClose, dir, () => 1)).toBe(1)
+    expect(fs.existsSync(`${dir}.lock`)).toBe(false)
+  })
+
+  it('ロックを取れなければ、用意できたことにせず失敗する（一時フォルダは残さない）', async () => {
+    const zip = runtimeZip('v2')
+    fs.writeFileSync(`${dir}.lock`, lockOf(process.pid, 'alive'))
+    await expect(stageRuntime(fs, dir, required(zip), async () => zip, undefined, 300)).rejects.toThrow('ほかの Discord')
+    expect(fs.existsSync(`${dir}.next`)).toBe(false)
+    expect(fs.readdirSync(tmp)).toEqual(['voicecord.lock'])
+  })
+
+  it('ロックが途中で空けば置ける', async () => {
+    const zip = runtimeZip('v2')
+    fs.writeFileSync(`${dir}.lock`, lockOf(process.pid, 'alive'))
+    setTimeout(() => fs.rmSync(`${dir}.lock`), 100)
+    await stageRuntime(fs, dir, required(zip), async () => zip, undefined, 5000)
+    expect(runtimeState(fs, `${dir}.next`, required(zip))).toBe('ok')
+  })
+
+  it('落ちたプロセスの一時フォルダは、次の起動で片付ける（生きているプロセスのものは残す）', () => {
+    writeRuntime(dir, 'v1')
+    fs.mkdirSync(path.join(`${dir}.tmp-${DEAD_PID}-1`, 'x'), { recursive: true })
+    fs.mkdirSync(`${dir}.tmp-${process.pid}-2`)
+    applyStagedRuntime(fs, dir, required(runtimeZip('v2')))
+    expect(fs.existsSync(`${dir}.tmp-${DEAD_PID}-1`)).toBe(false)
+    expect(fs.existsSync(`${dir}.tmp-${process.pid}-2`)).toBe(true)
+  })
+})
+
+describe('anySignal', () => {
+  it('AbortSignal.any が無くても、どれかが止まれば止まる', async () => {
+    const { anySignal } = await import('../../src/plugins/voiceCord.discordDesktop/native/runtimeUpdate')
+    const a = new AbortController()
+    const b = new AbortController()
+    const s = anySignal([a.signal, b.signal], false)
+    expect(s.aborted).toBe(false)
+    b.abort(new Error('stop'))
+    expect(s.aborted).toBe(true)
+    const pre = new AbortController()
+    pre.abort()
+    expect(anySignal([pre.signal], false).aborted).toBe(true)
+  })
+})

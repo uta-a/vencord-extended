@@ -269,7 +269,8 @@ function start() {
 
     const { failures } = summarize(runSubsystems(subsystems, log));
     registerStopKey();
-    status.degraded = failures;
+    // サブシステムの中で積んだ警告（ランタイムを入れ替えられなかった等）を消さない
+    status.degraded = [...status.degraded, ...failures];
     // エンジンが起動できなかったときだけ engine を failed にする。他の失敗は degraded で伝える
     const engineFailure = failures.find(f => f.name === "engine");
     if (engineFailure) {
