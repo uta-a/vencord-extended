@@ -137,23 +137,24 @@ async function runInstall(deps: ServiceDeps, install: DiscordInstall, action: "i
 
     const forceClose = await resolveForceClose(deps, install, opts.forceClose, opts.interactive);
 
-    let source: DistSource;
     let tmp: string | null = null;
-    if (opts.dev) source = { kind: "link", dir: join(process.cwd(), "dist") };
-    else if (opts.from) source = { kind: "copy", dir: opts.from };
-    else {
-        tmp = fs.mkdtempSync(join(os.tmpdir(), "vencord-extended-"));
-        info(`最新のリリースを取得しています（${opts.repo}）…`);
-        const release = await downloadLatestDist(opts.repo, tmp);
-        info(`${release.name || release.tag_name} を取得しました`);
-        source = { kind: "copy", dir: tmp };
-    }
     try {
+        let source: DistSource;
+        if (opts.dev) source = { kind: "link", dir: join(process.cwd(), "dist") };
+        else if (opts.from) source = { kind: "copy", dir: opts.from };
+        else {
+            tmp = fs.mkdtempSync(join(os.tmpdir(), "vencord-extended-"));
+            info(`最新のリリースを取得しています（${opts.repo}）…`);
+            const release = await downloadLatestDist(opts.repo, tmp);
+            info(`${release.name || release.tag_name} を取得しました`);
+            source = { kind: "copy", dir: tmp };
+        }
         const res = installTo(deps, install, source, forceClose, { resetRuntime: action === "repair" });
         // リリースの patcher.js は、ランタイムが無ければ起動時に取得する（開発用のリンクではリポジトリのものを使う）
         if (res.ok && tmp) res.message += "\nVoiceCord のランタイム（約 35 MB）は、Discord の次の起動時に自動で取得します";
         return res;
     } finally {
+        // 取得に失敗したときも消す
         if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
     }
 }
@@ -240,9 +241,12 @@ async function main(): Promise<void> {
 
 const interactiveLaunch = process.argv.length <= 2;
 
+let cancelled = false;
+
 main()
     .catch(e => {
         if (e instanceof Cancelled) {
+            cancelled = true;
             warn("中止しました");
             return;
         }
@@ -252,5 +256,6 @@ main()
         process.exitCode = 1;
     })
     // ダブルクリックで開いたとき、結果を読む前に窓が閉じないようにする（公式の CLI 版と同じ）
-    .then(() => (interactiveLaunch && isInteractive() ? waitEnter() : undefined))
+    // 自分で中止したときは読むべき結果が無いので、待たずに閉じる
+    .then(() => (interactiveLaunch && !cancelled && isInteractive() ? waitEnter() : undefined))
     .finally(() => process.exit());

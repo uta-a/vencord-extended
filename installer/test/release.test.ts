@@ -91,3 +91,33 @@ describe("tui", () => {
         assert.equal(lines[2], "❯ 解除 素に戻す");
     });
 });
+
+describe("取得先と修復の安全策", () => {
+    it("GitHub のホスト（リダイレクト先を含む）だけを信じる", async () => {
+        const { isTrustedHost } = await import("../src/release");
+        for (const u of ["https://api.github.com/repos/a/b/releases/latest", "https://github.com/a/b/releases/download/v1/x", "https://objects.githubusercontent.com/x", "https://release-assets.githubusercontent.com/x"]) {
+            assert.equal(isTrustedHost(u), true, u);
+        }
+        for (const u of ["http://github.com/x", "https://github.com.evil.example/x", "https://evil.example/github.com", "https://githubusercontent.com.evil.example/x"]) {
+            assert.equal(isTrustedHost(u), false, u);
+        }
+    });
+
+    it("修復は、ほかの Discord が起動していたら断り、ランタイムに触らない", async () => {
+        const { installTo } = await import("../src/service");
+        const paths = pathsFor(tmp);
+        fs.mkdirSync(path.join(paths.dist, "voicecord"), { recursive: true });
+        const install = { spec: { branch: "canary", exeName: "DiscordCanary.exe", label: "Discord Canary", dirName: "DiscordCanary" } } as never;
+        const deps = {
+            localAppData: tmp,
+            listProcesses: (image: string) => image === "Discord.exe" ? `"Discord.exe","1234","Console","1","100 K"` : "情報: 指定された条件に一致するタスクは実行されていません。",
+            killProcess: () => { throw new Error("終了させてはいけない"); },
+            sleep: () => { },
+            startDiscord: () => { }
+        };
+        const res = installTo(deps, install, { kind: "copy", dir: tmp }, true, { resetRuntime: true });
+        assert.equal(res.ok, false);
+        assert.match(res.message, /Discord Stable/);
+        assert.ok(fs.existsSync(path.join(paths.dist, "voicecord")));
+    });
+});

@@ -13,7 +13,7 @@ import { dirname, join, resolve } from "path";
 
 import { applyInstall, planInstall, targetFor, uninstall } from "./apply";
 import { isRunning, type ProcessLister, type RunningCheck } from "./running";
-import { type DiscordInstall, scanInstalls } from "./scan";
+import { BRANCHES, type DiscordInstall, scanInstalls } from "./scan";
 
 export interface Paths {
     /** %LOCALAPPDATA%\VencordExtended */
@@ -66,6 +66,16 @@ export interface InstallOptions {
 }
 
 export function installTo(deps: ServiceDeps, install: DiscordInstall, source: DistSource, forceClose = false, opts: InstallOptions = {}): OpResult {
+    // ランタイムはすべての Discord で共有している。ほかのブランチが動いていると、そのエンジンが使っているものを消してしまう
+    if (opts.resetRuntime) {
+        const others = BRANCHES.filter(b => b.exeName !== install.spec.exeName && isRunning(deps.listProcesses, b.exeName).running);
+        if (others.length > 0) {
+            return {
+                ok: false,
+                message: `${others.map(b => b.label).join("・")} が起動しています。VoiceCord のランタイムはすべての Discord で共有しているため、終了してから修復してください`
+            };
+        }
+    }
     return withDiscordClosed(deps, install, forceClose, () => {
         const paths = pathsFor(deps.localAppData);
         const plan = planInstall(targetFor(install.resourcesDir), paths.patcher);

@@ -36,10 +36,34 @@ export function pickDistAssets(release: Release): ReleaseAsset[] {
 
 export type Fetcher = (url: string, accept: string) => Promise<Buffer>;
 
+/**
+ * 取得先として信じるホスト。GitHub の API・リリースと、添付のリダイレクト先（*.githubusercontent.com）だけ。
+ * 4 ファイルは署名を検証していない（配布元が侵害されたら防げない）。せめて取得先は GitHub に限る
+ */
+export function isTrustedHost(url: string): boolean {
+    let u: URL;
+    try {
+        u = new URL(url);
+    } catch {
+        return false;
+    }
+    if (u.protocol !== "https:") return false;
+    return u.hostname === "github.com" || u.hostname === "api.github.com" || u.hostname.endsWith(".githubusercontent.com");
+}
+
+const MAX_BYTES = 64 * 1024 * 1024; // renderer.js でも数 MB。取り違えた巨大な応答を読み切らない
+const TIMEOUT_MS = 2 * 60_000;
+
 export const httpFetch: Fetcher = async (url, accept) => {
-    const res = await fetch(url, { headers: { "Accept": accept, "User-Agent": "VencordExtendedInstaller" } });
+    if (!isTrustedHost(url)) throw new Error(`GitHub 以外からは取得しません: ${url}`);
+    const res = await fetch(url, { headers: { "Accept": accept, "User-Agent": "VencordExtendedInstaller" }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    // リダイレクト先も確かめる
+    if (!isTrustedHost(res.url)) throw new Error(`GitHub 以外へ転送されたので取得をやめました: ${res.url}`);
     if (!res.ok) throw new Error(`${url} を取得できませんでした（${res.status} ${res.statusText}）`);
-    return Buffer.from(await res.arrayBuffer());
+    if (Number(res.headers.get("content-length")) > MAX_BYTES) throw new Error(`${url} が大きすぎます`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > MAX_BYTES) throw new Error(`${url} が大きすぎます`);
+    return buf;
 };
 
 export async function fetchLatestRelease(repo: string, get: Fetcher = httpFetch): Promise<Release> {
