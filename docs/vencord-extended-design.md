@@ -293,7 +293,7 @@ UI は Vencord プラグインとしてメインワールドで動かし、Disco
 | --- | --- | --- |
 | patcher.js / preload.js / renderer.js / renderer.css | リリースごと | Vencord と同じ名前。native と UI もここに含まれる |
 | `voicecord-runtime-win32-x64.zip` | engine / hook / frida が変わったとき | 中に `manifest.json`（ランタイム版の記録用） |
-| `VencordExtendedInstaller-<version>.exe` | インストーラの変更時 | portable |
+| `VencordExtendedInstaller.exe` | リリースごと | Node SEA の単一 exe（約 90 MB、署名なし） |
 
 ### 更新
 
@@ -302,6 +302,9 @@ UI は Vencord プラグインとしてメインワールドで動かし、Disco
 - 必要版に加えて、zip の期待する sha256 もビルド時に patcher.js へ埋める。取得した zip はその値で検証する。zip 内の manifest は zip と同じ出どころなので、検証には使わない（手元の版の記録にだけ使う）
 - 展開は一時フォルダで行い、検証が通ってから入れ替える。一致しなければ破棄し、status.engine = failed として理由を表示する
 - 実行中のエンジンが frida の .node を掴んでいるため、入れ替えは次回起動時に行う
+- 実装（M4）: `scripts/build/voicecord.mjs` の `prepareVoiceCordRelease` が、リリースのビルド（`--voicecord-release=<タグ>`）でだけ、エンジンとランタイムを patcher.js より先に作って zip にし、`VOICECORD_RUNTIME`（版・sha256・取得元）を埋める。版はランタイムの中身から作るので、中身が変わらなければ利用者は取り直さない。開発中のビルドでは null で、取得しない
+- 起動時（`native/runtimeUpdate.ts`）: `<dist>/voicecord.next` が必要な版なら、エンジンを起こす前に入れ替える。手元に無ければ取得してから起こし、古ければ今の版で起こして裏で `.next` を用意する。展開は `.tmp` で行ってから `.next` へ名前を変える
+- zip の読み書きは依存を増やさず自前で持つ（`scripts/build/zip.mjs`、`native/zip.ts`）。読む側は、展開先の外を指す名前・暗号化・展開後 512 MB 超を断つ
 - Discord 本体の更新後に再パッチする処理は、Vencord の `persistAfterDiscordUpdates` をそのまま使う
 
 ### インストーラ
@@ -314,6 +317,15 @@ Vencord 公式インストーラは Vendicated のリリースを取りに行く
 - Go 製の公式インストーラを fork する案は採らない。shim の検出、変化時の中断、復旧手順の配置を作り直すことになるため
 - 既存の Vencord や VoiceCord の shim を検出したら、二重に載せず置き換える。置き換え前に「これを外します」と表示する
 - `pnpm inject` / `uninject` はこのインストーラの CLI モードを呼ぶように差し替える
+- 形（M4）: Node SEA の単一 exe（`scripts/build/installer.mjs`）。引数なしで起動すると、Vencord 公式インストーラの CLI 版（promptui）と同じ流れの TUI になる。操作（導入・修復・解除）→ 対象の Discord を矢印キーで選び、結果を ✔ / ❌ で示して Enter で閉じる。TUI は依存を増やさず readline と ANSI で描く
+- 導入と修復は GitHub の最新リリースから 4 ファイルを取る。ランタイムは取らず、patcher.js が初回の起動で検証して取る。修復ではランタイム（`.next` などを含む）も消して取り直させる
+- 起動中の Discord は、対話では終了してよいか尋ねてから終了し、終わったら起動し直す。引数のときは `--force-close` に従う
+
+### リリース
+
+`.github/workflows/release.yml`。`v<package.json の version>` のタグを push すると、Windows のランナーでテスト・ビルド・exe 化を行い、GitHub のリリースを作る（タグと版が食い違えば止める）。リリースの名前の末尾をコミットのハッシュにし、ビルドにも同じハッシュを渡す（Vencord の更新はこの末尾と手元の版を比べる）。普段の CI（`fork-checks.yml`）でも、公開せずに同じ組み立てを行って壊れていないかを確かめる。
+
+利用者向けの導入・更新・解除・復旧の手順は `docs/recovery.md` に書く。
 
 ### 開発ループ
 
