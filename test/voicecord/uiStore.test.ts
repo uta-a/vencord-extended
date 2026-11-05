@@ -691,10 +691,98 @@ describe('UI store の取り消し', () => {
     bindApi(api)
     const job = store.getState().init()
     resetStore()
-    giveConfig({ ...(await base.getConfig()), folder: 'C:/old', master: 2.5 })
+    giveConfig({ ...(await base.getConfig()), folders: ['C:/old'], master: 2.5 })
     await job
-    expect(store.getState().folder).toBe('')
+    expect(store.getState().folders).toEqual([])
     expect(store.getState().ready).toBe(false)
     expect(store.getState().settings.master).not.toBe(2.5)
+  })
+})
+describe('UI store のサウンドフォルダ（複数）', () => {
+  afterEach(() => {
+    vi.resetModules()
+  })
+
+  const item = (folder: string, label: string): SoundItem => ({
+    id: `${folder.toLowerCase()}|${label}`, label, folder, name: `${label}.wav`, path: `${folder}/${label}.wav`, fp: '1', kind: 'file'
+  })
+  const FILES: Record<string, string[]> = { 'C:/a': ['x', 'y'], 'C:/b': ['z'], 'C:/c': ['w'] }
+
+  async function setup(folders: string[], chosen: (string | null)[] = []) {
+    const saved: Partial<AppConfig>[] = []
+    const base = createMockApi()
+    const api: Api = {
+      ...base,
+      getConfig: async () => ({ ...(await base.getConfig()), folders }),
+      saveConfig: async (p) => void saved.push(p),
+      scanFolder: async (folder) => (FILES[folder] ?? []).map(l => item(folder, l)),
+      chooseFolder: async () => chosen.shift() ?? null
+    }
+    const { store, bindApi } = await import('../../src/plugins/voiceCord.discordDesktop/store')
+    bindApi(api)
+    await store.getState().init()
+    return { store, saved }
+  }
+  const labels = (sounds: SoundItem[]) => sounds.map(s => `${s.folder}:${s.label}`)
+
+  it('init で全フォルダを並び順に走査して、一覧にまとめる', async () => {
+    const { store } = await setup(['C:/b', 'C:/a'])
+    expect(store.getState().folders).toEqual(['C:/b', 'C:/a'])
+    expect(labels(store.getState().sounds)).toEqual(['C:/b:z', 'C:/a:x', 'C:/a:y'])
+  })
+
+  it('addFolder は選んだフォルダを末尾に足して保存し、そのフォルダの音を一覧に加える', async () => {
+    const { store, saved } = await setup(['C:/a'], ['C:/b'])
+    await store.getState().addFolder()
+    expect(store.getState().folders).toEqual(['C:/a', 'C:/b'])
+    expect(saved).toContainEqual({ folders: ['C:/a', 'C:/b'] })
+    expect(labels(store.getState().sounds)).toEqual(['C:/a:x', 'C:/a:y', 'C:/b:z'])
+  })
+
+  it('addFolder は同じフォルダ（大文字小文字・区切りの違い）を足さずに知らせ、キャンセルなら何もしない', async () => {
+    const { store, saved } = await setup(['C:/a'], ['c:\\a\\', null])
+    await store.getState().addFolder()
+    expect(store.getState().folders).toEqual(['C:/a'])
+    expect(store.getState().status).toContain('すでに')
+    await store.getState().addFolder()
+    expect(store.getState().folders).toEqual(['C:/a'])
+    expect(saved).toEqual([])
+  })
+
+  it('removeFolder は外して保存し、そのフォルダの音を一覧から消す（音量の設定は残す）', async () => {
+    const { store, saved } = await setup(['C:/a', 'C:/b'])
+    store.setState({ sourceVolumes: { 'c:/b|z': 0.5 } })
+    store.getState().removeFolder('C:/b')
+    expect(store.getState().folders).toEqual(['C:/a'])
+    expect(saved).toContainEqual({ folders: ['C:/a'] })
+    expect(labels(store.getState().sounds)).toEqual(['C:/a:x', 'C:/a:y'])
+    expect(store.getState().sourceVolumes).toEqual({ 'c:/b|z': 0.5 })
+  })
+
+  it('moveFolder は並べ替えて保存し、一覧もその順になる。端からははみ出さない', async () => {
+    const { store, saved } = await setup(['C:/a', 'C:/b', 'C:/c'])
+    store.getState().moveFolder('C:/c', -1)
+    expect(store.getState().folders).toEqual(['C:/a', 'C:/c', 'C:/b'])
+    expect(saved).toContainEqual({ folders: ['C:/a', 'C:/c', 'C:/b'] })
+    expect(labels(store.getState().sounds)).toEqual(['C:/a:x', 'C:/a:y', 'C:/c:w', 'C:/b:z'])
+    store.getState().moveFolder('C:/a', -1)
+    expect(store.getState().folders).toEqual(['C:/a', 'C:/c', 'C:/b'])
+  })
+
+  it('走査の途中でフォルダを外したら、古い走査の結果で一覧を書き戻さない', async () => {
+    const { store } = await setup(['C:/a', 'C:/b'])
+    const job = store.getState().reload()
+    store.getState().removeFolder('C:/b')
+    await job
+    expect(labels(store.getState().sounds)).toEqual(['C:/a:x', 'C:/a:y'])
+  })
+  it('最初の読み込みの途中でフォルダを外しても、残りのフォルダの一覧は読み直す', async () => {
+    const { store } = await setup(['C:/a', 'C:/b'])
+    store.setState({ sounds: [] })
+    const job = store.getState().reload()
+    store.getState().removeFolder('C:/b')
+    await job
+    await new Promise(r => setTimeout(r, 0))
+    expect(labels(store.getState().sounds)).toEqual(['C:/a:x', 'C:/a:y'])
   })
 })

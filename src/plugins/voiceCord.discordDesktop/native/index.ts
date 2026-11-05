@@ -125,7 +125,7 @@ function start() {
                 const dfltFolder = defaultSoundsFolder(process.env.USERPROFILE ?? app.getPath("home"), path.join);
                 config = createConfigStore(fs, paths, defaultConfig(dfltFolder), path.dirname);
                 // 既定のフォルダだけは自動で作る。利用者が指定したフォルダは勝手に作らない（打ち間違いを隠さない）
-                if (config.get().folder === dfltFolder && !fs.existsSync(dfltFolder)) {
+                if (config.get().folders.includes(dfltFolder) && !fs.existsSync(dfltFolder)) {
                     fs.mkdirSync(dfltFolder, { recursive: true });
                 }
             }
@@ -312,8 +312,9 @@ export function saveConfig(_: IpcMainInvokeEvent, partial: unknown) {
 }
 
 export function scanSoundFolder(_: IpcMainInvokeEvent, folder?: unknown): SoundItem[] {
-    const target = typeof folder === "string" && folder !== "" ? folder : needConfig().get().folder;
-    return scanFolder(soundsFs, target);
+    // 渡されなければ 1 つ目のサウンドフォルダ（旧来の呼び方）。renderer はフォルダごとに呼ぶ
+    const target = typeof folder === "string" && folder !== "" ? folder : needConfig().get().folders[0];
+    return target === undefined ? [] : scanFolder(soundsFs, target);
 }
 
 export async function chooseFolder(_: IpcMainInvokeEvent): Promise<string | null> {
@@ -332,7 +333,7 @@ export function readSoundFile(_: IpcMainInvokeEvent, requested: unknown): ArrayB
         soundboard,
         unlocked: c.unlockSoundboard === true,
         soundsFs,
-        folder: c.folder,
+        folders: c.folders,
         requested: str(requested, "パス")
     });
     const buf = fs.readFileSync(target);

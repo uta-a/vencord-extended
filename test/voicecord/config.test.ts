@@ -111,7 +111,7 @@ describe('parseConfigText', () => {
 
   it('音源別音量は非数値を落として 0〜1.5 に収める', () => {
     const { config } = parseConfigText(
-      JSON.stringify({ sourceVolumes: { a: 0.5, b: 'x', c: 9, d: -2 } }),
+      JSON.stringify({ folders: [], sourceVolumes: { a: 0.5, b: 'x', c: 9, d: -2 } }),
       DFLT
     )
     expect(config.sourceVolumes).toEqual({ a: 0.5, c: 1.5, d: 0 })
@@ -124,9 +124,52 @@ describe('parseConfigText', () => {
       .toEqual({})
   })
 
-  it('folder が空文字や非文字列なら既定へ戻す', () => {
-    expect(parseConfigText(JSON.stringify({ folder: '' }), DFLT).config.folder).toBe(DFLT.folder)
-    expect(parseConfigText(JSON.stringify({ folder: 3 }), DFLT).config.folder).toBe(DFLT.folder)
+  it('既定のフォルダは 1 つ', () => {
+    expect(DFLT.folders).toEqual([win('C:/Users/u/Documents/VoiceCord/sounds')])
+  })
+
+  it('旧形式（folder 1 つ）は folders へ移し、音源別音量と入場サウンドのキーをそのフォルダの ID に直す', () => {
+    const old = win('D:/Sounds')
+    const { config } = parseConfigText(
+      JSON.stringify({ folder: old, sourceVolumes: { boing: 0.5, 'sb:123': 0.7 }, entrySoundSrcId: 'hello' }),
+      DFLT
+    )
+    expect(config.folders).toEqual([old])
+    expect(config.sourceVolumes).toEqual({ 'd:/sounds|boing': 0.5, 'sb:123': 0.7 })
+    expect(config.entrySoundSrcId).toBe('d:/sounds|hello')
+    expect('folder' in config).toBe(false)
+  })
+
+  it('folder が空や非文字列の旧設定は、既定のフォルダとして移す', () => {
+    for (const folder of ['', 3, undefined]) {
+      const { config } = parseConfigText(JSON.stringify({ folder, sourceVolumes: { a: 1 } }), DFLT)
+      expect(config.folders).toEqual(DFLT.folders)
+      expect(config.sourceVolumes).toEqual({ 'c:/users/u/documents/voicecord/sounds|a': 1 })
+    }
+  })
+
+  it('folders があれば移さない（キーはそのまま）', () => {
+    const { config } = parseConfigText(
+      JSON.stringify({ folders: [win('D:/A')], folder: win('D:/B'), sourceVolumes: { 'd:/a|x': 1 }, entrySoundSrcId: 'd:/a|x' }),
+      DFLT
+    )
+    expect(config.folders).toEqual([win('D:/A')])
+    expect(config.sourceVolumes).toEqual({ 'd:/a|x': 1 })
+    expect(config.entrySoundSrcId).toBe('d:/a|x')
+    expect('folder' in config).toBe(false)
+  })
+
+  it('folders から空・非文字列・同じフォルダの重複（大文字小文字と区切りの違い）を落とす', () => {
+    const { config } = parseConfigText(
+      JSON.stringify({ folders: [win('D:/A'), '', 3, 'd:/a/', win('D:/B')] }),
+      DFLT
+    )
+    expect(config.folders).toEqual([win('D:/A'), win('D:/B')])
+  })
+
+  it('folders が配列でなければ既定へ戻す。空の配列はそのまま（すべて外した状態）', () => {
+    expect(parseConfigText(JSON.stringify({ folders: 'D:/A' }), DFLT).config.folders).toEqual(DFLT.folders)
+    expect(parseConfigText(JSON.stringify({ folders: [] }), DFLT).config.folders).toEqual([])
   })
 
   it('校正値と音源別音量はそのまま引き継ぐ（再校正を強いない）', () => {
@@ -136,7 +179,8 @@ describe('parseConfigText', () => {
       DFLT
     )
     expect(config.calibration).toEqual(calibration)
-    expect(config.sourceVolumes).toEqual({ x: 0.9 })
+    // 旧形式なので、キーは既定のフォルダの ID に直る（値はそのまま）
+    expect(config.sourceVolumes).toEqual({ 'c:/users/u/documents/voicecord/sounds|x': 0.9 })
   })
 })
 
@@ -160,7 +204,7 @@ describe('loadConfig', () => {
     const fs = fakeFs({ [LEGACY]: JSON.stringify({ master: 2.2, sourceVolumes: { a: 0.3 } }) })
     const r = loadConfig(fs, PATHS, DFLT)
     expect(r.config.master).toBe(2.2)
-    expect(r.config.sourceVolumes).toEqual({ a: 0.3 })
+    expect(r.config.sourceVolumes).toEqual({ 'c:/users/u/documents/voicecord/sounds|a': 0.3 })
     expect(r.migratedFrom).toBe(LEGACY)
   })
 
@@ -263,7 +307,7 @@ describe('createConfigStore', () => {
   })
 
   it('部分更新は他のフィールドを壊さない', () => {
-    const fs = fakeFs({ [CONFIG]: JSON.stringify({ master: 1.0, sourceVolumes: { a: 0.5 } }) })
+    const fs = fakeFs({ [CONFIG]: JSON.stringify({ folders: [], master: 1.0, sourceVolumes: { a: 0.5 } }) })
     const store = createConfigStore(fs, PATHS, DFLT, dirname)
     store.save({ master: 2.0 })
     expect(store.get().sourceVolumes).toEqual({ a: 0.5 })
@@ -273,13 +317,14 @@ describe('createConfigStore', () => {
   it('保存する値も読み込み時と同じく矯正する（native は他のプラグインからも呼べる）', () => {
     const fs = fakeFs({ [CONFIG]: JSON.stringify({ master: 1.0 }) })
     const store = createConfigStore(fs, PATHS, DFLT, dirname)
-    store.save({ folder: 123, master: -99, sourceVolumes: { a: 9 } } as unknown as Partial<AppConfig>)
-    expect(store.get().folder).toBe(DFLT.folder)
+    store.save({ folders: 123, master: -99, sourceVolumes: { a: 9 } } as unknown as Partial<AppConfig>)
+    expect(store.get().folders).toEqual(DFLT.folders)
     expect(store.get().master).toBe(0)
     expect(store.get().sourceVolumes).toEqual({ a: 1.5 })
     const saved = JSON.parse(fs.files.get(CONFIG) as string)
-    expect(saved.folder).toBe(DFLT.folder)
+    expect(saved.folders).toEqual(DFLT.folders)
     expect(saved.master).toBe(0)
+    expect('folder' in saved).toBe(false)
   })
 
   it('保存に失敗しても在庫の値は更新する（UI を固まらせない）', () => {

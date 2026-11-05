@@ -43,7 +43,11 @@ export const PanelClasses = findCssClassesLazy("voiceUsers", "actionButtons", "b
 export const PickerClasses = findCssClassesLazy("picker", "inExpressionPicker");
 // 絵文字ピッカー（GIF・スタンプ・絵文字・サウンドボード）のタブ
 export const TabClasses = findCssClassesLazy("nav", "navList", "navItem", "navButton", "navButtonActive", "soundboardContainer");
-export const SectionClasses = findCssClassesLazy("sectionContainer", "sectionHeader", "sectionHeaderContent", "sectionTitle", "soundRow");
+export const SectionClasses = findCssClassesLazy("sectionContainer", "sectionHeader", "sectionHeaderContent", "sectionTitle", "soundRow", "headerIcon");
+// 純正サウンドボードの左のバー（サーバーごとのカテゴリ）。バーの項目、選択中の印（ピル）、サーバーのアイコン（頭文字）
+export const CategoryClasses = findCssClassesLazy("categoryList", "category", "categoryPill", "categoryIcon", "categoryIconIcon", "selected");
+export const PillClasses = findCssClassesLazy("wrapper", "small", "item", "visible", "selected", "hovered");
+export const GuildIconClasses = findCssClassesLazy("guildIcon", "guildIconWithoutImage", "guildAcronym", "mask");
 export const SoundClasses = findCssClassesLazy(
     "soundButtonWrapper", "soundButton", "soundButtonInteractive", "playing", "soundInfo", "soundName",
     "buttonOverlay", "buttonOverlayBackground", "buttonOverlayActions", "secondaryButton", "secondaryIcon", "primaryIcon"

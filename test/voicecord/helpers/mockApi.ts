@@ -9,6 +9,7 @@ import type {
   SoundItem,
   SourceStats
 } from '../../../src/voicecord/shared/types'
+import { folderKey, makeSoundId } from '../../../src/voicecord/shared/soundId.js'
 
 /**
  * エンジンのモック。
@@ -40,7 +41,9 @@ const MOCK_NAMES = [
 ]
 
 const MOCK_SOUNDS: SoundItem[] = MOCK_NAMES.map((n, i) => ({
-  id: n,
+  id: makeSoundId(MOCK_FOLDER, n),
+  label: n,
+  folder: MOCK_FOLDER,
   name: `${n}.wav`,
   path: `${MOCK_FOLDER}\\${n}.wav`,
   // 内容指紋。実装では mtimeNs_size なので、それらしい形にしておく
@@ -49,13 +52,10 @@ const MOCK_SOUNDS: SoundItem[] = MOCK_NAMES.map((n, i) => ({
 }))
 
 /** 音源ごとにばらつかせた音量。校正済みの環境の見た目に近づける */
-const MOCK_SOURCE_VOLUMES: Record<string, number> = {
-  ドラムロール: 0.85,
-  拍手: 0.4,
-  ファンファーレ: 1.15,
-  boing: 0.6,
-  レーザー: 0.75
-}
+const MOCK_SOURCE_VOLUMES: Record<string, number> = Object.fromEntries(
+  Object.entries({ ドラムロール: 0.85, 拍手: 0.4, ファンファーレ: 1.15, boing: 0.6, レーザー: 0.75 })
+    .map(([n, v]) => [makeSoundId(MOCK_FOLDER, n), v])
+)
 
 const SAMPLE_RATE = 48000
 
@@ -92,7 +92,7 @@ export function createMockApi(): Api {
 
   const config: LoadedConfig = {
     build: 'canary',
-    folder: MOCK_FOLDER,
+    folders: [MOCK_FOLDER],
     master: 1.0,
     sidetoneEnabled: false,
     sidetoneDevice: '',
@@ -120,7 +120,7 @@ export function createMockApi(): Api {
   }
 
   return {
-    getConfig: async () => ({ ...config, sourceVolumes: { ...config.sourceVolumes } }),
+    getConfig: async () => ({ ...config, folders: [...config.folders], sourceVolumes: { ...config.sourceVolumes } }),
     saveConfig: async (partial) => {
       Object.assign(config, partial)
     },
@@ -138,7 +138,7 @@ export function createMockApi(): Api {
       emit({ ev: 'detached' })
     },
 
-    scanFolder: async (folder) => (folder ? MOCK_SOUNDS.map((s) => ({ ...s })) : []),
+    scanFolder: async (folder) => (folder && folderKey(folder) === folderKey(MOCK_FOLDER) ? MOCK_SOUNDS.map((s) => ({ ...s })) : []),
     chooseFolder: async () => MOCK_FOLDER,
     getPcm: async (path) => synthPcm(path),
     // 実装では CDN から取って一時フォルダに置く。ここは置いたことにしてパスを返すだけ

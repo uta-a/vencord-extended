@@ -133,6 +133,8 @@ export default definePlugin({
     debug: {
         status: () => needApi().getStatus(),
         store: () => store.getState(),
+        // 表示の確認用。setState で保存せずに状態を差し替えられる
+        storeApi: () => store,
         tabsPatched: () => state.tabsPatched
     }
 });

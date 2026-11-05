@@ -450,6 +450,30 @@ describe('resolveCachedSoundPath', () => {
 })
 
 describe('resolveReadableSoundPath', () => {
+  it('どのサウンドフォルダの中でも読め、どのフォルダの外も読ませない', () => {
+    withOutside((outside) => {
+      const a = path.join(outside, 'a')
+      const b = path.join(outside, 'b')
+      fs.mkdirSync(a)
+      fs.mkdirSync(b)
+      fs.writeFileSync(path.join(a, 'x.wav'), 'x')
+      fs.writeFileSync(path.join(b, 'y.wav'), 'x')
+      fs.writeFileSync(path.join(outside, 'z.wav'), 'x')
+      const soundboard = createSoundboardCache({ dir, request: fakeRequest({}).request })
+      const read = (requested: string, folders = [a, b]): string =>
+        resolveReadableSoundPath({ soundboard, unlocked: false, soundsFs: realSoundsFs, folders, requested })
+
+      expect(read(path.join(a, 'x.wav'))).toBe(fs.realpathSync(path.join(a, 'x.wav')))
+      expect(read(path.join(b, 'y.wav'))).toBe(fs.realpathSync(path.join(b, 'y.wav')))
+      expect(() => read(path.join(outside, 'z.wav'))).toThrow('音源フォルダの外は読み取れません')
+      // 外したフォルダのファイルは読ませない
+      expect(() => read(path.join(b, 'y.wav'), [a])).toThrow('音源フォルダの外は読み取れません')
+      // フォルダの中で見つからないときは、外ではなく見つからないと伝える
+      expect(() => read(path.join(b, 'none.wav'))).toThrow('ファイルが見つかりません')
+      expect(() => read(path.join(a, 'x.wav'), [])).toThrow('音源フォルダが設定されていません')
+    })
+  })
+
   it('設定 ON ならキャッシュのファイルを先に通し、フォルダ内は従来どおり、フォルダ外はキャッシュ名に似ていても従来のエラー', () => {
     withOutside((outside) => {
       const folder = path.join(outside, 'sounds')
@@ -459,7 +483,7 @@ describe('resolveReadableSoundPath', () => {
       fs.writeFileSync(path.join(outside, '2.ogg'), 'x')
       const soundboard = createSoundboardCache({ dir, request: fakeRequest({}).request })
       const read = (requested: string): string =>
-        resolveReadableSoundPath({ soundboard, unlocked: true, soundsFs: realSoundsFs, folder, requested })
+        resolveReadableSoundPath({ soundboard, unlocked: true, soundsFs: realSoundsFs, folders: [folder], requested })
 
       expect(read(path.join(dir, '1.ogg'))).toBe(fs.realpathSync(path.join(dir, '1.ogg')))
       expect(read(path.join(folder, 'a.wav'))).toBe(fs.realpathSync(path.join(folder, 'a.wav')))
@@ -476,7 +500,7 @@ describe('resolveReadableSoundPath', () => {
           soundboard,
           unlocked: false,
           soundsFs: realSoundsFs,
-          folder: outside,
+          folders: [outside],
           requested: path.join(dir, '1.ogg')
         })
       ).toThrow('音源フォルダの外は読み取れません')

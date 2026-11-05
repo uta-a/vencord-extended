@@ -18,7 +18,12 @@ export const BUILD_LABEL: Record<BuildKey, string> = {
 export type ConnState = "disconnected" | "switching" | "waiting" | "connected";
 
 export interface SoundItem {
+  // 「フォルダの鍵 | フォルダ内の名前」（shared/soundId.ts）。音源別音量と入場サウンドのキー
   id: string
+  // 表示用の名前。拡張子を除いたファイル名で、同じフォルダの同名は _1, _2 … を付けて分ける
+  label: string
+  // 属するサウンドフォルダ（設定の folders の値そのまま）。フォルダごとの見出しに使う
+  folder: string
   name: string
   path: string
   fp: string // 内容指紋(mtimeNs_size)。差し替え検出とキャッシュ無効化に使う
@@ -55,7 +60,9 @@ export interface InjectPlayReq extends PlayReq {
 // 永続化する設定(Electron userData/config.json)。getConfig で renderer へ返す。
 export interface AppConfig {
   build: BuildKey
-  folder: string
+  // サウンドフォルダ。並び順がそのまま表示順になる。空にもできる（すべて外した状態）。
+  // 単一フォルダの時代の folder は、読み込み時にここへ移す（shared/config.ts）
+  folders: string[]
   // 送信音量。0..4 で、1.0 = 0dB(従来の 100%)、上限 4.0 = +12dB。
   // +12dB は hook.js の TX_GAIN(0.25 ≒ -12dB)をちょうど打ち消す点で、送信ヘッドルームに
   // よる減衰がゼロになる。ここが上限なので master*TX_GAIN <= 1.0 が保たれ、フルスケール
@@ -79,8 +86,8 @@ export interface AppConfig {
   // 音源の一括均一化で目標にするラウドネス(dBFS)。声とのバランスから推奨する送信音量も
   // この値を基準に計算するため、両者で必ず同じ値を見る。
   normalizeRefDbfs: number
-  // 音声パネルのビデオ(カメラ)ボタンを隠し、VoiceCord のボタンを純正の列に横一列で並べる。
-  // 既定は ON。OFF のときはビデオボタンを残し、列の幅を分けないよう純正サウンドボードの下に 2 段で置く。
+  // 音声パネルのビデオ(カメラ)ボタンを隠す。既定は ON（VoiceCord のボタンを並べていた頃からの設定。
+  // 今は VoiceCord を純正サウンドボードのタブに置くので、ボタンの並びには関わらない）
   hideCameraButton: boolean
   // 純正サウンドボードで Nitro が必要な(ほかのサーバーの)サウンドを押したとき、純正の勧誘を止めて
   // 音声を CDN から取り、VoiceCord の注入で鳴らす。Discord の利用規約に反しうるので既定は OFF。

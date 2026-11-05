@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { isSoundboardSoundId } from "../../../voicecord/shared/soundboard.js";
-import { resolveSoundPath, type SoundsFs } from "./soundsFs.js";
+import { OUTSIDE_ERROR, resolveSoundPath, type SoundsFs } from "./soundsFs.js";
 
 export { isSoundboardSoundId };
 
@@ -361,7 +361,8 @@ export interface ReadableSoundPathOptions {
   /** ほかのサーバーのサウンドを鳴らす設定。OFF ならキャッシュは読ませない */
   unlocked: boolean
   soundsFs: SoundsFs
-  folder: string
+  // サウンドフォルダ（設定の folders）。どれかの中にあれば読める
+  folders: readonly string[]
   requested: string
 }
 
@@ -377,7 +378,13 @@ export function resolveReadableSoundPath(opts: ReadableSoundPathOptions): string
     const cached = opts.soundboard.resolveCachedSoundPath(opts.requested);
     if (cached !== null) return cached;
   }
-  const r = resolveSoundPath(opts.soundsFs, opts.folder, opts.requested);
-  if (!r.ok) throw new Error(r.error);
-  return r.path;
+  if (opts.folders.length === 0) throw new Error("音源フォルダが設定されていません");
+  // どれかのフォルダの中なら読める。すべて断られたら、外だという理由より「中にあるが読めない」理由を優先して伝える
+  let error: string | null = null;
+  for (const folder of opts.folders) {
+    const r = resolveSoundPath(opts.soundsFs, folder, opts.requested);
+    if (r.ok) return r.path;
+    if (error === null || error === OUTSIDE_ERROR) error = r.error;
+  }
+  throw new Error(error ?? OUTSIDE_ERROR);
 }

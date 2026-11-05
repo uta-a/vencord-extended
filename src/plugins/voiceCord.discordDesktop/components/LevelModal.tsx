@@ -17,6 +17,7 @@ import type { RenderModalProps } from "@vencord/discord-types";
 import { closeModal, Modal, openModal, ScrollerThin, useEffect, useMemo, useRef, useState } from "@webpack/common";
 
 import { clampRefDbfs } from "../../../voicecord/shared/loudness";
+import { soundIdLabel } from "../../../voicecord/shared/soundId";
 import type { SoundItem, SourceStats } from "../../../voicecord/shared/types";
 import { DiscordText } from "./discord";
 import { ArrowRightIcon, CheckIcon, GaugeIcon } from "./icons";
@@ -75,7 +76,7 @@ function useNormalizeScan(sounds: SoundItem[]) {
             if (st) got[s.id] = st;
         }
         setFailed(r.failed);
-        setError(r.firstError ? `${r.firstError.id}: ${humanizeEngineMessage(r.firstError.message)}` : "");
+        setError(r.firstError ? `${soundIdLabel(r.firstError.id)}: ${humanizeEngineMessage(r.firstError.message)}` : "");
         setScanning(false);
         const ref = medianDbfs(Object.values(got).map(s => s.rms));
         if (ref === null) return;
@@ -312,7 +313,7 @@ function LevelBody() {
                                     const differs = Math.abs(r.rec.vol - r.applied) >= 0.005;
                                     return (
                                         <tr key={r.sound.id}>
-                                            <td title={r.sound.name}>{r.sound.id}</td>
+                                            <td title={r.sound.path}>{r.sound.label}</td>
                                             <td>{fmtDbfs(r.st.rms)}</td>
                                             <td className={r.rec.clampedAt ? "vc-voicecord-warn" : undefined} title={note}>{Math.round(r.rec.vol * 100)}%{r.rec.clampedAt && " ⚠"}</td>
                                             <td className={differs ? "vc-voicecord-accent" : undefined}>{Math.round(r.applied * 100)}%</td>

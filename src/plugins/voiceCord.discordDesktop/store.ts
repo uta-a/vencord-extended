@@ -7,6 +7,7 @@
 import { createStore } from "zustand/vanilla";
 
 import { gatedRms } from "../../voicecord/shared/loudness";
+import { folderKey, soundIdLabel } from "../../voicecord/shared/soundId";
 import type {
   Api,
   AppConfig,
@@ -179,7 +180,9 @@ interface State {
   connectionDetail: string
   micTransmit: MicTransmit
   build: BuildKey
-  folder: string
+  // サウンドフォルダ。並び順がそのまま一覧と左のバーの順になる
+  folders: string[]
+  // 全フォルダの音源を folders の順にまとめたもの（フォルダの中は名前順）
   sounds: SoundItem[]
   search: string
   voices: Voice[]
@@ -205,7 +208,10 @@ interface State {
   init: () => Promise<void>
   connect: (build: BuildKey) => Promise<void>
   reload: () => Promise<void>
-  chooseFolder: () => Promise<void>
+  // サウンドフォルダの追加（選ぶダイアログ）・削除・並べ替え。どれも設定へ保存する
+  addFolder: () => Promise<void>
+  removeFolder: (folder: string) => void
+  moveFolder: (folder: string, delta: number) => void
   // controls
   setBuild: (b: BuildKey) => void
   setSearch: (s: string) => void
@@ -254,6 +260,9 @@ const NOT_STARTED = "VoiceCord が起動していません";
 // ユーザーの操作に対応しておらず、出すと無意味な通知が増えるだけ。
 let initStarted = false; // React StrictMode の二重 init(→二重 attach)を防ぐ
 let connectSeq = 0; // 連続ビルド切替で古い attach 結果が後勝ちするのを防ぐ世代トークン
+// フォルダの走査の世代。走査の途中でフォルダを足し引きしたら、古い走査の結果で一覧を書き戻さない
+let scanSeq = 0;
+let scanInFlight = 0;
 // 全停止で進める世代。全停止の前に始めた再生が、送信を待つ間に止められていたら行を作らず止める
 let stopGen = 0;
 // resetStore で進める世代。プラグインを止めた後に、古い init が状態を書き戻さないようにする
@@ -519,7 +528,7 @@ export const store = createStore<State>((rawSet, get) => {
   connectionDetail: "",
   micTransmit: "closed",
   build: "canary",
-  folder: "",
+  folders: [],
   sounds: [],
   search: "",
   voices: [],
@@ -575,7 +584,7 @@ export const store = createStore<State>((rawSet, get) => {
       }
       const snd = st.sounds.find(s => s.id === srcId);
       if (!snd) {
-        set({ status: `入場サウンドが見つかりません: ${srcId}` });
+        set({ status: `入場サウンドが見つかりません: ${soundIdLabel(srcId)}` });
         return;
       }
       entryFiring = true;
@@ -792,7 +801,7 @@ export const store = createStore<State>((rawSet, get) => {
       const cfg = await api.getConfig();
       if (life !== lifeGen) return;
       set({
-        folder: cfg.folder,
+        folders: cfg.folders,
         build: cfg.build,
         sourceVolumes: cfg.sourceVolumes ?? {},
         settings: {
@@ -816,9 +825,8 @@ export const store = createStore<State>((rawSet, get) => {
       // 設定を読めなかった起動では、その理由を最初に出す。既定値で静かに動き出すと
       // 「校正も音量も消えた」ことにしか気付けない。
       if (cfg.loadWarning) set({ status: cfg.loadWarning });
-      const sounds = await api.scanFolder(cfg.folder);
+      await get().reload();
       if (life !== lifeGen) return;
-      set({ sounds });
       // 出力デバイス列挙 + サイドトーン/試聴の出力先を設定
       const devices = await listOutputDevices();
       if (life !== lifeGen) return;
@@ -889,20 +897,55 @@ export const store = createStore<State>((rawSet, get) => {
 
   reload: async () => {
     if (!api) return;
-    const { folder } = get();
-    if (!folder) return;
-    const sounds = await api.scanFolder(folder);
-    set({ sounds });
+    const seq = ++scanSeq;
+    const { folders } = get();
+    scanInFlight++;
+    try {
+      const lists = await Promise.all(folders.map(f => api!.scanFolder(f)));
+      if (seq !== scanSeq) return;
+      set({ sounds: lists.flat() });
+    } finally {
+      scanInFlight--;
+    }
   },
 
-  chooseFolder: async () => {
+  addFolder: async () => {
     if (!api) return;
     const folder = await api.chooseFolder();
     if (!folder) return;
-    set({ folder });
-    persistConfig({ folder });
-    const sounds = await api.scanFolder(folder);
-    set({ sounds });
+    const { folders } = get();
+    if (folders.some(f => folderKey(f) === folderKey(folder))) {
+      set({ status: `「${folder}」はすでに追加されています` });
+      return;
+    }
+    const next = [...folders, folder];
+    set({ folders: next });
+    persistConfig({ folders: next });
+    await get().reload();
+  },
+
+  removeFolder: folder => {
+    const next = get().folders.filter(f => f !== folder);
+    // 走査中の結果は外す前のフォルダを含むので捨てる。外したフォルダの音だけ一覧から消せば足りる
+    scanSeq++;
+    set(s => ({ folders: next, sounds: s.sounds.filter(x => x.folder !== folder) }));
+    persistConfig({ folders: next });
+    // 捨てた走査が最初の読み込みだったときに一覧が空のまま残らないよう、走り直す
+    if (scanInFlight > 0) void get().reload();
+  },
+
+  moveFolder: (folder, delta) => {
+    const folders = [...get().folders];
+    const from = folders.indexOf(folder);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= folders.length) return;
+    folders.splice(to, 0, ...folders.splice(from, 1));
+    const order = new Map(folders.map((f, i) => [f, i]));
+    scanSeq++;
+    // フォルダの中の順は保ったまま、フォルダの順に並べ直す（sort は安定）
+    set(s => ({ folders, sounds: [...s.sounds].sort((a, b) => (order.get(a.folder) ?? 0) - (order.get(b.folder) ?? 0)) }));
+    persistConfig({ folders });
+    if (scanInFlight > 0) void get().reload();
   },
 
   setBuild: b => {
@@ -1017,7 +1060,7 @@ export const store = createStore<State>((rawSet, get) => {
       if (r.failed > 0 && r.firstError) {
         // 生の英語(ffmpeg のログ等)をそのまま出さない。ダイアログと同じ写像を通す。
         notes.push(
-          `${r.failed} 件を測定できませんでした: ${r.firstError.id}: ${humanizeEngineMessage(r.firstError.message)}`
+          `${r.failed} 件を測定できませんでした: ${soundIdLabel(r.firstError.id)}: ${humanizeEngineMessage(r.firstError.message)}`
         );
       }
       if (reloaded > 0) notes.push(`一覧が更新されたため ${reloaded} 件は揃えませんでした。もう一度押してください`);
@@ -1034,7 +1077,7 @@ export const store = createStore<State>((rawSet, get) => {
     const st0 = get();
     const snd = st0.sounds.find(s => s.id === srcId);
     if (!snd) {
-      set({ status: `サウンドが見つかりません: ${srcId}。一覧を再読込してください` });
+      set({ status: `サウンドが見つかりません: ${soundIdLabel(srcId)}。一覧を再読込してください` });
       return;
     }
     const vol = override?.vol ?? st0.volFor(srcId);
@@ -1054,10 +1097,10 @@ export const store = createStore<State>((rawSet, get) => {
     ) {
       unadjustedNotified.add(srcId);
       set({
-        status: `${snd.id} はまだ音量を揃えていません。音量調整の「音源の音量を揃える」を実行するまで、この音だけ相手への大きさがずれます`
+        status: `${snd.label} はまだ音量を揃えていません。音量調整の「音源の音量を揃える」を実行するまで、この音だけ相手への大きさがずれます`
       });
     }
-    await playResolved(snd, vol, snd.id, gen);
+    await playResolved(snd, vol, snd.label, gen);
   },
 
   playSoundboardSound: async (soundId, name) => {
@@ -1089,7 +1132,7 @@ export const store = createStore<State>((rawSet, get) => {
       set({ status: "ほかのサーバーのサウンドを鳴らす設定がオフになったため、再生しませんでした" });
       return;
     }
-    await playResolved({ id: srcId, name: label, path: fetched.path, fp: fetched.fp, kind: "file" }, vol, label, gen);
+    await playResolved({ id: srcId, label, folder: "", name: label, path: fetched.path, fp: fetched.fp, kind: "file" }, vol, label, gen);
   },
 
   stopVoice: voiceId => {
@@ -1124,7 +1167,7 @@ export const store = createStore<State>((rawSet, get) => {
     }
     const snd = st.sounds.find(s => s.id === srcId);
     if (!snd) {
-      set({ status: `サウンドが見つかりません: ${srcId}。一覧を再読込してください` });
+      set({ status: `サウンドが見つかりません: ${soundIdLabel(srcId)}。一覧を再読込してください` });
       return;
     }
     if (!api) {
@@ -1145,7 +1188,7 @@ export const store = createStore<State>((rawSet, get) => {
       previewSrc: srcId,
       voices: [
         ...st.voices.filter(v => v.kind !== "preview"),
-        { voiceId: "preview", srcId, name: snd.id, volume: vol, kind: "preview" }
+        { voiceId: "preview", srcId, name: snd.label, volume: vol, kind: "preview" }
       ]
     });
     void (async () => {
@@ -1190,7 +1233,7 @@ export const store = createStore<State>((rawSet, get) => {
       return;
     }
     if (!st.sounds.some(s => s.id === srcId)) {
-      set({ status: `入場サウンドが見つかりません: ${srcId}` });
+      set({ status: `入場サウンドが見つかりません: ${soundIdLabel(srcId)}` });
       return;
     }
     get().togglePreview(srcId, st.settings.entrySoundVolume);
