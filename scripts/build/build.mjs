@@ -23,7 +23,7 @@ import { readdir } from "fs/promises";
 import { join, resolve } from "path";
 
 import { BUILD_TIMESTAMP, commonOpts, exists, globPlugins, IS_DEV, IS_REPORTER, IS_ANTI_CRASH_TEST, IS_STANDALONE, IS_UPDATER_DISABLED, resolvePluginName, VERSION, commonRendererPlugins, watch, buildOrWatchAll, stringifyValues, getMonacoEditorCdnUrl } from "./common.mjs";
-import { copyVoiceCordRuntime, voiceCordBuildConfigs } from "./voicecord.mjs"; // vencord-extended
+import { copyVoiceCordRuntime, prepareVoiceCordRelease, voiceCordBuildConfigs, VOICECORD_RELEASE_TAG } from "./voicecord.mjs"; // vencord-extended
 
 const defines = stringifyValues({
     IS_STANDALONE,
@@ -37,6 +37,8 @@ const defines = stringifyValues({
     VERSION,
     BUILD_TIMESTAMP,
     DESKTOP_MONACO_EDITOR_URL: await getMonacoEditorCdnUrl(),
+    // vencord-extended: VoiceCord のランタイムの必要な版・zip の sha256・取得元（リリースのビルドだけ。ほかは null）
+    VOICECORD_RUNTIME: await prepareVoiceCordRelease(),
 });
 
 if (defines.IS_STANDALONE === "false") {
@@ -219,8 +221,10 @@ const buildConfigs = ([
     }
 ]);
 
-// vencord-extended: VoiceCord のエンジンと frida ランタイム（--no-voicecord で飛ばす）
-buildConfigs.push(...voiceCordBuildConfigs());
-copyVoiceCordRuntime();
+// vencord-extended: VoiceCord のエンジンと frida ランタイム（--no-voicecord で飛ばす。リリースでは先に作ってある）
+if (!VOICECORD_RELEASE_TAG) {
+    buildConfigs.push(...voiceCordBuildConfigs());
+    copyVoiceCordRuntime();
+}
 
 await buildOrWatchAll(buildConfigs);
