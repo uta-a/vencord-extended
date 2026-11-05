@@ -86,9 +86,6 @@ export interface AppConfig {
   // 音源の一括均一化で目標にするラウドネス(dBFS)。声とのバランスから推奨する送信音量も
   // この値を基準に計算するため、両者で必ず同じ値を見る。
   normalizeRefDbfs: number
-  // 音声パネルのビデオ(カメラ)ボタンを隠す。既定は ON（VoiceCord のボタンを並べていた頃からの設定。
-  // 今は VoiceCord を純正サウンドボードのタブに置くので、ボタンの並びには関わらない）
-  hideCameraButton: boolean
   // 純正サウンドボードで Nitro が必要な(ほかのサーバーの)サウンドを押したとき、純正の勧誘を止めて
   // 音声を CDN から取り、VoiceCord の注入で鳴らす。Discord の利用規約に反しうるので既定は OFF。
   unlockSoundboard: boolean

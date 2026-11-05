@@ -76,7 +76,6 @@ export function defaultConfig(soundsFolder: string): AppConfig {
     entryDelayMs: 0,
     entryLeaveDebounceMs: 2500,
     normalizeRefDbfs: -14,
-    hideCameraButton: true,
     unlockSoundboard: false,
     calibration: null
   };
@@ -120,7 +119,8 @@ export function sanitize(data: AppConfig, dflt: AppConfig): AppConfig {
     rec.sourceVolumes = {};
   }
   // 手編集で真偽値以外が入っていたら既定へ(文字列の "false" を真と扱わない)
-  if (typeof rec.hideCameraButton !== "boolean") rec.hideCameraButton = dfltRec.hideCameraButton;
+  // 廃止した設定（ビデオボタンを隠す）。古い config.json に残っていても書き戻さない
+  delete rec.hideCameraButton;
   if (typeof rec.unlockSoundboard !== "boolean") rec.unlockSoundboard = dfltRec.unlockSoundboard;
   // folders は配列でなければ既定へ。空文字・非文字列・同じフォルダの重複は落とす（空の配列は許す）
   if (Array.isArray(rec.folders)) {

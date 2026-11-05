@@ -5,7 +5,7 @@
  */
 
 import ErrorBoundary from "@components/ErrorBoundary";
-import { filters, findCssClassesLazy, mapMangledCssClasses, waitFor, waitForSubscriptions } from "@webpack";
+import { findCssClassesLazy } from "@webpack";
 import { Clickable, SelectedChannelStore, Tooltip } from "@webpack/common";
 import type { MouseEvent } from "react";
 
@@ -14,13 +14,12 @@ import { FilledStopIcon } from "./components/icons";
 import { isTrustedInput } from "./lib/trusted";
 import { playingSoundboardIds, store } from "./store";
 
-// 純正サウンドボードと音声パネルとの連携（voicecord-module の preload の presence / cameraButton /
+// 純正サウンドボードと音声パネルとの連携（voicecord-module の preload の presence /
 // lockedSounds / soundboardStop 由来）。DOM の接ぎ木と横取りをやめ、webpack パッチと CSS で行う。
 // Discord の要素そのものには属性もスタイルも足さず、html の印と CSS だけで見た目を変える
 
 const HeaderClasses = findCssClassesLazy("settingsClickArea", "settingsIcon", "soundRow");
 
-const HIDE_CAMERA_ATTR = "data-voicecord-hide-camera";
 const UNLOCK_ATTR = "data-voicecord-unlock-soundboard";
 const STYLE_ID = "vc-voicecord-dynamic";
 
@@ -78,7 +77,7 @@ export function renderHeaderAccessories(original: () => React.ReactNode) {
     return <><WrappedStopButton />{original()}</>;
 }
 
-// ---- 動的な CSS（カメラ・ロック・再生中の枠） ----
+// ---- 動的な CSS（ロック・再生中の枠） ----
 
 // ロックの鍵と Nitro の装飾・誘導を隠す。クラス名は短縮されているので「名前_」の部分一致で当てる
 const UNLOCK_CSS = [
@@ -90,39 +89,6 @@ const UNLOCK_CSS = [
     "[role=\"dialog\"] [class*=\"upsellContainerFloating_\"]{display:none !important}",
     "[class*=\"categoryItemLockIconContainer_\"]{display:none !important}"
 ].map(rule => `html[${UNLOCK_ATTR}] ${rule.replace(/,/g, `,html[${UNLOCK_ATTR}] `)}`).join("");
-
-// ビデオボタンを隠す。音声パネルのボタン列の先頭の子（純正の並びではカメラ）だけに効かせる。
-// 「actionButtons_」はほかの部品にもあるので、部分一致ではなく音声パネルの CSS モジュールのクラスで当てる。
-// そのモジュールは起動時にまだ読み込まれていないことがある。findCssClassesLazy は見つからなかった結果を
-// 覚えてしまうので、waitFor で読み込まれた時点に受け取る
-const PANEL_CLASSES = ["voiceUsers", "actionButtons", "button", "buttonColor", "buttonContents", "buttonIcon", "greyButtonActive"];
-let actionButtonsClass: string | null = null;
-const actionButtonsListeners = new Set<() => void>();
-// 待っている間の waitFor のフィルター。プラグインを止めたら購読ごと外す
-let waitingFilter: ReturnType<typeof filters.byClassNames> | null = null;
-
-function watchActionButtonsClass(onFound: () => void) {
-    actionButtonsListeners.add(onFound);
-    if (waitingFilter === null && actionButtonsClass === null) {
-        const filter = waitingFilter = filters.byClassNames(...PANEL_CLASSES);
-        waitFor(filter, m => {
-            if (waitingFilter === filter) waitingFilter = null;
-            actionButtonsClass = mapMangledCssClasses(m, ["actionButtons"]).actionButtons?.split(" ")[0] ?? null;
-            for (const cb of actionButtonsListeners) cb();
-        });
-    }
-    return () => {
-        actionButtonsListeners.delete(onFound);
-        if (actionButtonsListeners.size === 0 && waitingFilter !== null) {
-            waitForSubscriptions.delete(waitingFilter);
-            waitingFilter = null;
-        }
-    };
-}
-
-function cameraCss() {
-    return actionButtonsClass ? `html[${HIDE_CAMERA_ATTR}] .${actionButtonsClass} > :first-child{display:none !important}` : "";
-}
 
 // VoiceCord で鳴らしている純正サウンドボードのサウンドに、純正の再生中と同じ緑の枠を付ける
 function playingCss(ids: readonly string[]) {
@@ -141,19 +107,15 @@ export function watchSoundboardStyles() {
 
     const apply = () => {
         const s = store.getState();
-        root.toggleAttribute(HIDE_CAMERA_ATTR, s.settings.hideCameraButton);
         root.toggleAttribute(UNLOCK_ATTR, s.settings.unlockSoundboard);
-        const css = cameraCss() + UNLOCK_CSS + playingCss(playingSoundboardIds(s.voices));
+        const css = UNLOCK_CSS + playingCss(playingSoundboardIds(s.voices));
         if (css !== lastCss) style.textContent = lastCss = css;
     };
     apply();
     const off = store.subscribe(apply);
-    const offClass = watchActionButtonsClass(apply);
     return () => {
         off();
-        offClass();
         style.remove();
-        root.removeAttribute(HIDE_CAMERA_ATTR);
         root.removeAttribute(UNLOCK_ATTR);
     };
 }

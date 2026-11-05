@@ -269,7 +269,7 @@ UI は Vencord プラグインとしてメインワールドで動かし、Disco
 | 他サーバーのサウンドの解除（`lockedSounds.ts`） | 純正タイルの `onClick` の先頭をパッチで分岐させる（find: `/showLockForDisabledSound:\i=!0/`。match は `canUseSound` の否定とサウンドの変数を後読みで拾う）。鍵と Nitro の誘導は html の印と CSS で隠す |
 | 純正サウンドボードの停止ボタン（`soundboardStop.ts`） | ヘッダーの `renderHeaderAccessories` をパッチで包み、音量アイコンの前に並べる（find: `"SoundboardSoundGrid"`） |
 | VoiceCord で鳴らしている純正サウンドの再生中の枠 | サウンド ID ごとのセレクタを生成し、純正の再生中と同じ緑の枠を CSS で付ける |
-| カメラボタン非表示（`cameraButton.ts`） | 設定で html に印を付け、音声パネルのボタン列（CSS モジュールの `actionButtons` クラス）の先頭を CSS で隠す（パネルの関数には途中で return する分岐があるので、パッチでフックは使えない）。クラスは `waitFor` でモジュールが読み込まれた時点に受け取る（`findCssClassesLazy` は起動直後に見つからなかった結果を覚えてしまう） |
+| カメラボタン非表示（`cameraButton.ts`） | 移植しない（廃止。VoiceCord を純正サウンドボードのタブに置き、音声パネルのボタンの並びに関わらなくなったため。古い config.json の `hideCameraButton` は読み捨てる） |
 | VC 在席の判定（`presence.ts`） | `SelectedChannelStore` の変化を store へ渡し、hook の vc イベントと併用する |
 | 入場サウンド | store のロジックのまま（hook の gateInfo で Connection* の張り替えを検知して鳴らす。flux の購読より誤発火が少ない） |
 | 緊急停止 Ctrl+Alt+Shift+X（`keyboard.ts`） | renderer の keydown を維持。重ねて main 側の `before-input-event` でも捕まえる |
