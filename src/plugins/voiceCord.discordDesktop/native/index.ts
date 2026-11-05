@@ -19,7 +19,6 @@
 
 import { RendererSettings } from "@main/settings";
 import { DATA_DIR, IS_VANILLA } from "@main/utils/constants";
-import { fetchBuffer } from "@main/utils/http";
 import { app, BrowserWindow, dialog, type IpcMainInvokeEvent, utilityProcess } from "electron";
 import fs from "fs";
 import path from "path";
@@ -32,7 +31,7 @@ import type { AppConfig, InjectPlayReq, LoadedConfig, SoundItem } from "../../..
 import { createEngineHost, type EngineHost, type EngineProcessLike } from "./engineHost";
 import { createEventQueue, type NextResult } from "./eventQueue";
 import { guessBranch, locateInstall } from "./locate";
-import { applyStagedRuntime, type RequiredRuntime, runtimeState, stageRuntime } from "./runtimeUpdate";
+import { applyStagedRuntime, downloadLimited, type RequiredRuntime, runtimeState, stageRuntime } from "./runtimeUpdate";
 import { createSoundboardCache, resolveReadableSoundPath, type SoundboardCache } from "./soundboardCache";
 import { scanFolder, type SoundsFs } from "./soundsFs";
 import { runSubsystems, type Subsystem, type SubsystemLog, summarize } from "./subsystems";
@@ -117,6 +116,12 @@ const REQUIRED_RUNTIME: RequiredRuntime | null = typeof VOICECORD_RUNTIME === "u
 // start / stop のたびに進める世代。取得を待つ間に止められたら、古い取得の続きでエンジンを起こさない
 let lifeGen = 0;
 let staging: Promise<void> | null = null;
+// 進行中の取得の取り消し。プラグインを止めたら取得もやめる（止める前の取得を、次の start が待ち続けないように）
+let stagingAbort: AbortController | null = null;
+
+// zip は 35 MB 前後。取り違えや巨大な応答で main のメモリを使い切らないよう上限を設ける
+const RUNTIME_MAX_BYTES = 200 * 1024 * 1024;
+const RUNTIME_TIMEOUT_MS = 10 * 60_000;
 
 function startEngine(paths: VoiceCordPaths) {
     if (!fs.existsSync(paths.engine)) throw new Error(`エンジンが見つかりません: ${paths.engine}`);
@@ -157,10 +162,18 @@ function startEngine(paths: VoiceCordPaths) {
 }
 
 function stageOnce(paths: VoiceCordPaths, required: RequiredRuntime): Promise<void> {
-    staging ??= stageRuntime(fs, paths.runtimeDir, required, fetchBuffer).finally(() => {
-        staging = null;
+    if (staging) return staging;
+    const abort = stagingAbort = new AbortController();
+    const fetchZip = (url: string, signal?: AbortSignal) =>
+        downloadLimited(url, { maxBytes: RUNTIME_MAX_BYTES, timeoutMs: RUNTIME_TIMEOUT_MS, signal });
+    const job: Promise<void> = stageRuntime(fs, paths.runtimeDir, required, fetchZip, abort.signal).finally(() => {
+        if (staging === job) {
+            staging = null;
+            stagingAbort = null;
+        }
     });
-    return staging;
+    staging = job;
+    return job;
 }
 
 async function fetchRuntimeThenStart(paths: VoiceCordPaths, required: RequiredRuntime, gen: number) {
@@ -168,6 +181,8 @@ async function fetchRuntimeThenStart(paths: VoiceCordPaths, required: RequiredRu
         await stageOnce(paths, required);
         if (gen !== lifeGen) return;
         applyStagedRuntime(fs, paths.runtimeDir, required);
+        // ほかの Discord が入れ替え中で見送ったときも、そちらが置いたものがあれば起こせる
+        if (runtimeState(fs, paths.runtimeDir, required) === "missing") throw new Error("ランタイムを入れ替えられませんでした（ほかの Discord が入れ替え中の可能性があります。Discord を再起動してください）");
         status.lastError = null;
         startEngine(paths);
     } catch (e) {
@@ -223,7 +238,13 @@ function start() {
                 const required = REQUIRED_RUNTIME;
                 if (required) {
                     // 前回までに用意した新しい版があれば、エンジンを起こす前に入れ替える
-                    applyStagedRuntime(fs, paths.runtimeDir, required);
+                    try {
+                        applyStagedRuntime(fs, paths.runtimeDir, required);
+                    } catch (e) {
+                        // 入れ替えに失敗しても今ある版で起こす（旧版は戻してあるか、.old に残してある）
+                        log.error("新しいランタイムに入れ替えられませんでした", e);
+                        status.degraded = [...status.degraded, { name: "runtime", error: `新しいランタイムに入れ替えられませんでした（今の版で動いています）: ${e instanceof Error ? e.message : String(e)}` }];
+                    }
                     const state = runtimeState(fs, paths.runtimeDir, required);
                     if (state === "missing") {
                         // 導入直後などでランタイムが無い。取得してから起こす（その間は starting のまま理由を出す）
@@ -262,6 +283,7 @@ function stopEverything() {
     if (!started) return;
     started = false;
     lifeGen++;
+    stagingAbort?.abort();
     // 子側は parentPort の close でもゲートを戻す（ゲート復帰の 1 層目）
     engine?.stop();
     engine = null;
