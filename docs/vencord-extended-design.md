@@ -101,7 +101,7 @@ vencord-extended/
 │  ├─ api.ts           window.api の後継。pluginHelpers と long-poll を包む
 │  ├─ store.ts         旧 src/ui/store.ts（zustand/vanilla）と useVoiceCord フック
 │  ├─ audio/           decode, localAudio, calibration, sourceScan
-│  ├─ components/      SoundboardPopout, NowPlaying, LevelDialog,
+│  ├─ components/      SoundboardTabs, SoundboardPopout, NowPlaying, LevelDialog,
 │  │                    EntrySoundDialog, SettingsSections, Fab
 │  └─ style.css        接頭辞 vc-voicecord-、Discord の CSS 変数を使う
 ├─ src/voicecord/                           fork 独自のコア
@@ -146,7 +146,7 @@ native モジュールは patcher.js に束ねられ、Discord の起動直後�
 
 | 名前 | 内容 | 失敗時 |
 | --- | --- | --- |
-| config | 音源フォルダ、音源別音量、校正値、入場サウンドの保存。既定フォルダは自動作成 | 設定 API が理由付きで throw |
+| config | 音源フォルダ（複数）、音源別音量、校正値、入場サウンドの保存。既定フォルダは自動作成。単一フォルダの時代の設定は読み込み時に移す | 設定 API が理由付きで throw |
 | engine | `utilityProcess.fork(<dist>/voicecord/engine.mjs)`。frida はこの子の中だけで読む | status.engine = failed |
 | ipc | native 関数の実体。フォルダ外のファイル読み取りを拒否する制限も維持 | 該当 API が理由付きで throw |
 
@@ -221,20 +221,36 @@ nextEvents(cursor: number): Promise<
 
 UI は Vencord プラグインとしてメインワールドで動かし、Discord の React と純正コンポーネントで描画します。現行の isolated world 用の仕組み（採取役、接ぎ木、自前の React、Tailwind）は廃止します。Shadow DOM で現行 UI を維持する案は採りません。長く保守する前提では、テーマへの追従と Vencord との一体感のほうが効くためです。その代わり、M3 が移植で最大の山場になります。
 
-### ボタンの差し込み
+### サウンドボードのタブ
 
-- 音声パネルの actionButtons を描画するモジュールを、Vencord の `patches` で書き換える。純正サウンドボードボタン（ボタン列の最後の要素）の直後に `$self.renderPanelButton({channel})` を挿入する
-- `find` はハッシュ付きクラス名ではなく、プロパティ名など安定した文字列で当てる（M2 で Canary 1.0.1295 を調べて決めた）
-  - find: `/canGoLive:\i,enableActivities:/`（ボタン列を描画する関数の中のプロパティ名。全モジュールで一意）
-  - match: `/\{channel:(\i),focusProps:\i\}\):null(?=\]\})/`（純正サウンドボードボタンの要素の終わり。モジュール内で一意）
-- Discord の CSS モジュールは書き出しのキーも短縮されている（`uu:"actionButtons_e131a9"`）ため、`findByProps("actionButtons")` は使えない。代わりに `findCssClassesLazy` でクラス名の接頭辞から引く（`voiceUsers` と `actionButtons` を含めて音声パネルのモジュールに絞る）
-- パッチが当たらなかった場合は予備の FAB を出す。VC に入って 5 秒経ってもボタンが一度も描画されなければ故障と判定し、画面右下に FAB を出して理由をツールチップで示す
+音声パネルにボタンは足さず、純正サウンドボードのポップアウトに「サウンドボード / VoiceCord」のタブを付ける（2026/11/5 に方式を変更。M2〜M3 では純正サウンドボードボタンの隣にボタンを差し込んでいた）。
+
+- 音声パネルのサウンドボードボタンが開くポップアウトの中身（純正のサウンド一覧）を、Vencord の `patches` で `$self.renderSoundboardTabs(中身)` に包む。Canary 1.0.1304 で調べて決めた
+  - find: `"CUSTOM_CALL_SOUNDS_PICKER_UPSELL&&"`（ポップアウトの gridNotice の条件。全モジュールで一意）
+  - match: `/\(0,\i\.jsx\)\(\i\.\i,\{guildId:\i,channel:\i,onClose:\i,gridNotice:.{0,150}?analyticsSource:"rtc panel"\}\)/`（中身の要素全体）
+- タブは絵文字ピッカー（GIF・スタンプ・絵文字・サウンドボード）のタブと同じクラス（`nav` / `navList` / `navItem` / `navButton` / `navButtonActive`）で描く。枠は純正と同じ `picker` クラスで、中身の高さも純正と同じ 420px にそろえ、タブを切り替えても大きさを変えない
+- 最後に開いていたタブを覚え、次に開いたときもそのタブから始める（Discord を再起動すると「サウンドボード」に戻る）
+- Discord のキーバインド（サウンドボードを開く）でも同じポップアウトが開くので、タブもそのまま付く
+- タブの描画に失敗したら、ErrorBoundary で純正の中身だけを返し、サウンドボード自体は使えるままにする
+- Discord の CSS モジュールは書き出しのキーも短縮されている（`uu:"actionButtons_e131a9"`）ため、`findByProps("actionButtons")` は使えない。代わりに `findCssClassesLazy` でクラス名の接頭辞から引く
+- パッチが当たらなかった場合は予備の FAB を出す。パッチ済みのソースは開発ビルドでしか残らないため、置き換えを関数で書き、当たった時点で印を付ける。VC に入って 5 秒たっても印が無ければ故障と判定し、画面右下に FAB を出して理由をツールチップで示す
+
+### サウンドフォルダ（複数）
+
+2026/11/5 に、サウンドフォルダを複数持てるようにした。純正サウンドボードがサーバーごとにサウンドを分けるのと同じ見た目で、フォルダごとに分けて並べる。
+
+- 設定は `folders: string[]`。並び順がそのまま表示順。空にもできる。重複（大文字小文字・区切りの違い）は読み込みと保存のたびに落とす
+- サウンドの ID は「フォルダの鍵 | フォルダ内の名前」（`shared/soundId.ts`）。鍵は区切りをスラッシュにそろえて小文字にしたパス。`|` は Windows のパスにもファイル名にも使えないので取り違えない。フォルダを外したり並べ替えたりしても、ほかのフォルダの ID（音源別音量・入場サウンドのキー）は変わらない
+- 単一フォルダの時代の設定（`folders` が無いか、配列でない）は、読み込み時に `folder` を `folders` の 1 つ目に移し、音源別音量と入場サウンドのキーをそのフォルダの ID に直す。旧来の `folder` は残さない（このため、古いビルドに戻すと既定のフォルダに戻る）
+- 一覧は、左に純正と同じバー（フォルダ名の頭文字・選択中の印・末尾の「＋」で追加）、右にフォルダごとのセクション（見出しを押すと畳む）。クラスは純正サウンドボードの `category` / `categoryPill` / ピル / `guildIcon` を使う
+- 検索中は一致の無いフォルダを出さない。畳んだフォルダは Discord を再起動するまで覚える
+- 設定画面にフォルダの一覧を出し、追加・上下の並べ替え・外すをできるようにした。外してもファイルと音量の設定は消さない
 
 ### ポップアウトと部品
 
 | 現行 | 移行先 |
 | --- | --- |
-| `#vc-root` への自前ポータル | Discord の `Popout`（`@webpack/common`）でボタンに紐付ける |
+| `#vc-root` への自前ポータル | 純正サウンドボードのポップアウトのタブ（予備の FAB では Discord の `Popout`） |
 | ポップアウトの器・見出し・行・タイル | 純正サウンドボードのクラス（`picker` / `sectionHeader` / `soundRow` / `soundButton` と操作の帯）を `findCssClassesLazy` で引いて使う |
 | Radix の Dialog | Discord の新しい `Modal`（`@webpack/common`。タイトル・サブタイトル・下部のボタン付き） |
 | Radix の Slider / Select | Discord の `Slider` / `Select`。Slider は `markers` に下限・上限を必ず含める（含めないと範囲が崩れる） |
@@ -253,7 +269,7 @@ UI は Vencord プラグインとしてメインワールドで動かし、Disco
 | 他サーバーのサウンドの解除（`lockedSounds.ts`） | 純正タイルの `onClick` の先頭をパッチで分岐させる（find: `/showLockForDisabledSound:\i=!0/`。match は `canUseSound` の否定とサウンドの変数を後読みで拾う）。鍵と Nitro の誘導は html の印と CSS で隠す |
 | 純正サウンドボードの停止ボタン（`soundboardStop.ts`） | ヘッダーの `renderHeaderAccessories` をパッチで包み、音量アイコンの前に並べる（find: `"SoundboardSoundGrid"`） |
 | VoiceCord で鳴らしている純正サウンドの再生中の枠 | サウンド ID ごとのセレクタを生成し、純正の再生中と同じ緑の枠を CSS で付ける |
-| カメラボタン非表示（`cameraButton.ts`） | 設定で html に印を付け、VoiceCord のボタンがある列の先頭を CSS で隠す（パネルの関数には途中で return する分岐があるので、パッチでフックは使えない） |
+| カメラボタン非表示（`cameraButton.ts`） | 設定で html に印を付け、音声パネルのボタン列（CSS モジュールの `actionButtons` クラス）の先頭を CSS で隠す（パネルの関数には途中で return する分岐があるので、パッチでフックは使えない）。クラスは `waitFor` でモジュールが読み込まれた時点に受け取る（`findCssClassesLazy` は起動直後に見つからなかった結果を覚えてしまう） |
 | VC 在席の判定（`presence.ts`） | `SelectedChannelStore` の変化を store へ渡し、hook の vc イベントと併用する |
 | 入場サウンド | store のロジックのまま（hook の gateInfo で Connection* の張り替えを検知して鳴らす。flux の購読より誤発火が少ない） |
 | 緊急停止 Ctrl+Alt+Shift+X（`keyboard.ts`） | renderer の keydown を維持。重ねて main 側の `before-input-event` でも捕まえる |
@@ -325,7 +341,7 @@ Vencord の更新は「upstream/main を main へ merge する」形で取り込
 | engine.mjs や frida ランタイムがない・壊れている | status.engine = failed。UI は理由を表示し、更新時にランタイムを取り直す |
 | エンジンが異常終了 | utilityProcess なので Discord は生き残る。バックオフ付きで再起動する。hook は parentPort の close でゲートを戻し、注入音が残らない |
 | Krisp の export が見つからない | searching のまま待機し、「Krisp を有効にして」と表示する |
-| ボタンのパッチが当たらない | 予備の FAB を出し、理由を表示する。他のパッチの成否には影響しない |
+| タブのパッチが当たらない | 予備の FAB を出し、理由を表示する。他のパッチの成否には影響しない |
 | プラグインが無効 | エンジンは起動せず frida も読まない。実行中に無効にしたら全停止して終了する |
 | Vencord の vanilla モード | VoiceCord も動かさない |
 | 再生が止まらない | 緊急停止（Ctrl+Alt+Shift+X）を renderer と main の 2 経路で受け付ける |
@@ -334,7 +350,7 @@ Vencord の更新は「upstream/main を main へ merge する」形で取り込
 その他の安全策:
 
 - 注入する制御値は hook 側の `num()` ガードで常に丸める。音源別は最大 1.5、master は最大 4.0、同時再生は 8 音まで
-- `readSoundFile` が読めるのは、音源フォルダ配下とサウンドボードのキャッシュの決まった名前だけ。任意のパスは読まない
+- `readSoundFile` が読めるのは、設定の音源フォルダ（どれか）の配下とサウンドボードのキャッシュの決まった名前だけ。任意のパスは読まない
 - native は他のプラグインからも呼べる。そのため、引数は型と範囲を main 側でも検証する
 - README と初回起動時の表示（1 回だけ。プラグインの有効・無効に関わらず出す）で、非公式のクライアント改変であること、Discord の利用規約やアカウントへの影響は利用者が確認することを伝える
 
@@ -354,7 +370,7 @@ Vencord の更新は「upstream/main を main へ merge する」形で取り込
 
 - [ ] インストーラで適用し、Vencord の設定画面と公式プラグイン（FakeNitro、PlatformIndicators など）が動く
 - [ ] 既存の Vencord / VoiceCord 導入済み環境からの置き換えで、二重に読み込まれない
-- [ ] VC 参加でボタンが純正サウンドボードの隣に出る。チャンネル移動や再入場でも消えない
+- [ ] VC 参加後、純正サウンドボードのポップアウトに VoiceCord のタブが出る。チャンネル移動や再入場でも消えない
 - [ ] 再生した音を別アカウントで受信し、速度とピッチが正しい（32 kHz / 48 kHz の両方）
 - [ ] 音量校正、モニター、入場サウンド、他サーバーのサウンドが現行と同じ結果になる
 - [ ] エンジンを kill すると注入音が止まり、自動で再アタッチする
@@ -384,7 +400,7 @@ Vencord の更新は「upstream/main を main へ merge する」形で取り込
 
 | リスク | 影響 | 対策 |
 | --- | --- | --- |
-| Discord の更新でボタンのパッチが当たらなくなる | ボタンが消える | 予備 FAB。`find` は安定した文字列で当てる。upstream の修正もすぐ取り込む |
+| Discord の更新でタブのパッチが当たらなくなる | タブが消える | 予備 FAB。`find` は安定した文字列で当てる。upstream の修正もすぐ取り込む |
 | Krisp の export 名やフレーム長（10 ms）が変わる | 注入できない、または速度が狂う | 現行と同じく実測レートで動かす。変わったら hook を再調査する |
 | upstream との衝突 | 取り込みが遅れる | コア改変を `FORK_CHANGES.md` の一覧に限り、CI で検査する。毎日の自動 merge で早めに気付く |
 | frida ランタイム（約 75 MB）の配布 | 初回導入が重い。ウイルス対策ソフトに誤検知されうる | 更新は版が変わったときだけにする。誤検知時の案内を README に書く |

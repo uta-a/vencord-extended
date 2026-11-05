@@ -5,6 +5,7 @@
  */
 
 import { REF_MAX_DBFS, REF_MIN_DBFS } from "./loudness.js";
+import { folderKey, migrateLegacySoundId } from "./soundId.js";
 import type { AppConfig } from "./types.js";
 
 /**
@@ -63,7 +64,7 @@ export function defaultSoundsFolder(userProfile: string, join: (...p: string[]) 
 export function defaultConfig(soundsFolder: string): AppConfig {
   return {
     build: "canary",
-    folder: soundsFolder,
+    folders: [soundsFolder],
     master: 0.8,
     sidetoneEnabled: false,
     sidetoneDevice: "",
@@ -121,9 +122,45 @@ export function sanitize(data: AppConfig, dflt: AppConfig): AppConfig {
   // 手編集で真偽値以外が入っていたら既定へ(文字列の "false" を真と扱わない)
   if (typeof rec.hideCameraButton !== "boolean") rec.hideCameraButton = dfltRec.hideCameraButton;
   if (typeof rec.unlockSoundboard !== "boolean") rec.unlockSoundboard = dfltRec.unlockSoundboard;
-  // folder は文字列でなければ既定へ。空文字は「未設定」として既定に戻す
-  if (typeof rec.folder !== "string" || rec.folder === "") rec.folder = dfltRec.folder;
+  // folders は配列でなければ既定へ。空文字・非文字列・同じフォルダの重複は落とす（空の配列は許す）
+  if (Array.isArray(rec.folders)) {
+    const seen = new Set<string>();
+    rec.folders = rec.folders.filter((f): f is string => {
+      if (typeof f !== "string" || f === "") return false;
+      const key = folderKey(f);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  } else {
+    rec.folders = [...(dfltRec.folders as string[])];
+  }
+  // 単一フォルダの時代の項目は残さない（移行は parseConfigText で済ませてある）
+  delete rec.folder;
   return data;
+}
+
+/**
+ * 単一フォルダの時代の設定（folders が無いか、配列でない）を移す。folder を folders の 1 つ目にし、
+ * 音源別音量と入場サウンドのキー（フォルダ内の名前だけ）をそのフォルダの ID に直す。
+ * folder が無いか壊れていれば、当時も既定のフォルダを使っていたので既定のフォルダとして直す
+ */
+function migrateLegacyFolder(loaded: Record<string, unknown>, dflt: AppConfig): Record<string, unknown> {
+  // folders が壊れている（配列でない）ときも移す。そうしないと有効な旧 folder と旧形式のキーを失う
+  if (Array.isArray(loaded.folders)) return loaded;
+  const folder = typeof loaded.folder === "string" && loaded.folder !== "" ? loaded.folder : dflt.folders[0];
+  if (folder === undefined) return loaded;
+  const out: Record<string, unknown> = { ...loaded, folders: [folder] };
+  const sv = loaded.sourceVolumes;
+  if (sv !== null && typeof sv === "object" && !Array.isArray(sv)) {
+    out.sourceVolumes = Object.fromEntries(
+      Object.entries(sv as Record<string, unknown>).map(([id, v]) => [migrateLegacySoundId(id, folder), v])
+    );
+  }
+  if (typeof loaded.entrySoundSrcId === "string") {
+    out.entrySoundSrcId = migrateLegacySoundId(loaded.entrySoundSrcId, folder);
+  }
+  return out;
 }
 
 /** config.json のテキストを AppConfig へ。読み取り側の耐性はここに集約する（純関数） */
@@ -136,7 +173,8 @@ export function parseConfigText(
     if (loaded === null || typeof loaded !== "object" || Array.isArray(loaded)) {
       return { config: dflt, error: "設定ファイルの形式が想定と違いました" };
     }
-    return { config: sanitize({ ...dflt, ...loaded }, dflt), error: null };
+    const migrated = migrateLegacyFolder(loaded as Record<string, unknown>, dflt);
+    return { config: sanitize({ ...dflt, ...migrated } as AppConfig, dflt), error: null };
   } catch (e) {
     return { config: dflt, error: `設定ファイルを読み取れませんでした: ${String(e)}` };
   }

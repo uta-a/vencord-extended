@@ -112,19 +112,22 @@ describe('scanFolder', () => {
     expect(scanFolder(fs, FOLDER).map((s) => s.name)).toEqual(['a.wav', 'b.wav', 'c.wav'])
   })
 
-  it('id は拡張子を除いたファイル名', () => {
+  it('label は拡張子を除いたファイル名、id はフォルダの鍵と label、folder は渡したフォルダそのまま', () => {
     const fs = folderWith(f('ドラムロール.wav'))
-    expect(scanFolder(fs, FOLDER)[0]?.id).toBe('ドラムロール')
+    const [s] = scanFolder(fs, FOLDER)
+    expect(s?.label).toBe('ドラムロール')
+    expect(s?.id).toBe('c:/sounds|ドラムロール')
+    expect(s?.folder).toBe(FOLDER)
   })
 
   it('同名は連番。実在する base_1 とも衝突させない（sourceVolumes の取り違えを防ぐ）', () => {
     const fs = folderWith(f('boing.mp3'), f('boing.wav'), f('boing_1.mp3'))
-    expect(scanFolder(fs, FOLDER).map((s) => s.id)).toEqual(['boing', 'boing_1', 'boing_1_1'])
+    expect(scanFolder(fs, FOLDER).map((s) => s.label)).toEqual(['boing', 'boing_1', 'boing_1_1'])
   })
 
   it('同名が n 件だけなら従来どおりの規則（既存のキーを変えない）', () => {
     const fs = folderWith(f('x.mp3'), f('x.ogg'), f('x.wav'))
-    expect(scanFolder(fs, FOLDER).map((s) => s.id)).toEqual(['x', 'x_1', 'x_2'])
+    expect(scanFolder(fs, FOLDER).map((s) => s.label)).toEqual(['x', 'x_1', 'x_2'])
   })
 
   it('内容指紋は mtimeNs_size', () => {

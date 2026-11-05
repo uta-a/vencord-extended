@@ -5,7 +5,7 @@
  */
 
 import ErrorBoundary from "@components/ErrorBoundary";
-import { onButtonSeen, state } from "@plugins/voiceCord.discordDesktop/state";
+import { onTabsPatched, state } from "@plugins/voiceCord.discordDesktop/state";
 import { createRoot, Popout, SelectedChannelStore, Tooltip, useEffect, useRef, useState, useStateFromStores } from "@webpack/common";
 import type { Root } from "react-dom/client";
 
@@ -13,28 +13,29 @@ import { DiscordButton } from "./discord";
 import { SoundIcon } from "./icons";
 import { SoundboardPopout } from "./SoundboardPopout";
 
-// VC に入ってからこの時間、パネルのボタンが一度も描画されなければパッチが外れたと見なす
-const BUTTON_GRACE_MS = 5000;
+// 予備のボタン。純正サウンドボードにタブを差し込むパッチが外れたとき（Discord の更新など）だけ、画面右下に出す
 
-const BROKEN_TEXT = "音声パネルにボタンを差し込めませんでした（Discord の更新でパッチが外れた可能性があります）。代わりにここから使えます";
+// VC に入ってからこの時間たってから確かめる（音声パネルのモジュールが読み込まれ、パッチが当たるのを待つ）
+const CHECK_DELAY_MS = 5000;
+
+const BROKEN_TEXT = "サウンドボードに VoiceCord のタブを差し込めませんでした（Discord の更新でパッチが外れた可能性があります）。代わりにここから使えます";
 
 function Fab() {
     const inVc = useStateFromStores([SelectedChannelStore], () => SelectedChannelStore.getVoiceChannelId() != null);
-    const [seen, setSeen] = useState(state.buttonSeen);
-    const [graceOver, setGraceOver] = useState(false);
+    const [broken, setBroken] = useState(false);
     const [show, setShow] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
 
-    useEffect(() => onButtonSeen(() => setSeen(true)), []);
+    // 確かめた後でパッチが当たった（対象のモジュールが遅れて読み込まれた）ら、予備のボタンを引っ込める
+    useEffect(() => onTabsPatched(() => setBroken(false)), []);
 
     useEffect(() => {
-        setGraceOver(false);
         if (!inVc) return;
-        const timer = setTimeout(() => setGraceOver(true), BUTTON_GRACE_MS);
+        const timer = setTimeout(() => setBroken(!state.tabsPatched), CHECK_DELAY_MS);
         return () => clearTimeout(timer);
     }, [inVc]);
 
-    if (!inVc || seen || !graceOver) return null;
+    if (!inVc || !broken) return null;
 
     return (
         <Popout

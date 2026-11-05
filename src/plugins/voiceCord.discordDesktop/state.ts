@@ -6,13 +6,13 @@
 
 import type { VoiceCordApi } from "./api";
 
-const buttonSeenListeners = new Set<() => void>();
-
 // プラグインの start() で作り、stop() で捨てる。部品はここから api を受け取る
 export const state = {
     api: null as VoiceCordApi | null,
-    // 音声パネルのボタンが一度でも描画されたか。パッチが当たっていない（予備の FAB が要る）ことの判定に使う
-    buttonSeen: false
+    // 純正サウンドボードにタブを差し込むパッチが当たったか。外れていたら予備のボタンを出す
+    tabsPatched: false,
+    // 純正サウンドボードの VoiceCord タブが一度でも描画されたか。状態の表示に使う
+    tabsSeen: false
 };
 
 export function needApi() {
@@ -20,13 +20,19 @@ export function needApi() {
     return state.api;
 }
 
-export function markButtonSeen() {
-    if (state.buttonSeen) return;
-    state.buttonSeen = true;
-    for (const cb of buttonSeenListeners) cb();
+const tabsPatchedListeners = new Set<() => void>();
+
+export function markTabsPatched() {
+    state.tabsPatched = true;
+    for (const cb of tabsPatchedListeners) cb();
 }
 
-export function onButtonSeen(cb: () => void) {
-    buttonSeenListeners.add(cb);
-    return () => void buttonSeenListeners.delete(cb);
+/** パッチが（遅れて）当たったことを受け取る。予備のボタンを引っ込めるのに使う */
+export function onTabsPatched(cb: () => void) {
+    tabsPatchedListeners.add(cb);
+    return () => void tabsPatchedListeners.delete(cb);
+}
+
+export function markTabsSeen() {
+    state.tabsSeen = true;
 }

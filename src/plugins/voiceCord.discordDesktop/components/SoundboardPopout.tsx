@@ -5,7 +5,7 @@
  */
 
 import { FormSwitch } from "@components/FormSwitch";
-import { CogWheel, FolderIcon, RestartIcon } from "@components/Icons";
+import { CogWheel, RestartIcon } from "@components/Icons";
 import { useEngineStatus } from "@plugins/voiceCord.discordDesktop/engineStatus";
 import { guardTrusted } from "@plugins/voiceCord.discordDesktop/lib/trusted";
 import { state } from "@plugins/voiceCord.discordDesktop/state";
@@ -15,10 +15,12 @@ import { classes } from "@utils/misc";
 import { Popout, React, ScrollerThin, Tooltip, useEffect, useMemo, useRef, useState } from "@webpack/common";
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 
+import { soundIdLabel } from "../../../voicecord/shared/soundId";
 import { DOT_LABEL, statusProblems } from "../../../voicecord/shared/status";
 import type { ConnState, SoundItem } from "../../../voicecord/shared/types";
 import { DiscordSearchBar, DiscordText, PickerClasses, SectionClasses, SoundClasses } from "./discord";
 import { openEntrySoundModal } from "./EntrySoundModal";
+import { FolderBar, FolderHeader, folderName, useFolderScroll } from "./Folders";
 import { BackIcon, HeadphonesIcon, PlayIcon, SlidersIcon, SoundIcon, StopIcon, WarningIcon } from "./icons";
 import { MasterFader } from "./MasterFader";
 import { MonitorSection, VolumeSection } from "./SettingsSections";
@@ -38,8 +40,6 @@ const CONNECTION: Record<ConnState, string> = {
 const SOUNDS_PER_ROW = 3;
 const rowsOf = <T,>(items: T[]) =>
     Array.from({ length: Math.ceil(items.length / SOUNDS_PER_ROW) }, (_, i) => items.slice(i * SOUNDS_PER_ROW, (i + 1) * SOUNDS_PER_ROW));
-
-const folderName = (folder: string) => folder.split(/[\\/]/).filter(s => s !== "").pop() ?? "サウンドフォルダ";
 
 function IconButton({ label, onClick, children }: { label: string; onClick: (e: MouseEvent) => void; children: ReactNode; }) {
     return (
@@ -61,7 +61,7 @@ function VolumeBody({ sound }: { sound: SoundItem; }) {
     const isPreviewing = previewSrc === sound.id;
 
     return (
-        <div className={classes(PickerClasses.picker, "vc-voicecord-volume")} role="dialog" aria-label={`${sound.id}の音量`}>
+        <div className={classes(PickerClasses.picker, "vc-voicecord-volume")} role="dialog" aria-label={`${sound.label}の音量`}>
             <DiscordText variant="body-md/semibold" lineClamp={1}>{sound.name}</DiscordText>
             <div className="vc-voicecord-spread">
                 <Small>この音の音量（送信・モニター共通）</Small>
@@ -73,7 +73,7 @@ function VolumeBody({ sound }: { sound: SoundItem; }) {
                 </Small>
             )}
             <VSlider
-                label={`${sound.id}の音量`}
+                label={`${sound.label}の音量`}
                 value={Math.round(volume * 100)}
                 min={0}
                 max={150}
@@ -134,7 +134,7 @@ function SoundTile({ sound }: { sound: SoundItem; }) {
                     <div
                         role="button"
                         tabIndex={0}
-                        aria-label={`${sound.id}をプレイする`}
+                        aria-label={`${sound.label}をプレイする`}
                         aria-disabled={!isConnected}
                         title={isConnected ? sound.name : "VC未接続のため再生できません（右クリックで試聴・音量調節）"}
                         className={classes(SoundClasses.soundButton, SoundClasses.soundButtonInteractive, isPlaying && SoundClasses.playing, !isConnected && "vc-voicecord-dim")}
@@ -152,7 +152,7 @@ function SoundTile({ sound }: { sound: SoundItem; }) {
                         <div className={SoundClasses.soundInfo}>
                             {unadjusted && <WarningIcon size={14} className="vc-voicecord-warn" />}
                             {isPreviewing && <HeadphonesIcon size={14} className="vc-voicecord-accent" />}
-                            <DiscordText variant="body-xs/medium" className={SoundClasses.soundName} lineClamp={1}>{sound.id}</DiscordText>
+                            <DiscordText variant="body-xs/medium" className={SoundClasses.soundName} lineClamp={1}>{sound.label}</DiscordText>
                         </div>
                         {/* 純正と同じく、中央は再生の印。試聴と音量は左右の操作に分ける */}
                         <div className={SoundClasses.buttonOverlay}>
@@ -162,7 +162,7 @@ function SoundTile({ sound }: { sound: SoundItem; }) {
                                     data-secondary
                                     role="button"
                                     tabIndex={0}
-                                    aria-label={isPreviewing ? `${sound.id}の試聴を停止` : `${sound.id}を試聴`}
+                                    aria-label={isPreviewing ? `${sound.label}の試聴を停止` : `${sound.label}を試聴`}
                                     className={SoundClasses.secondaryButton}
                                     onClick={() => togglePreview(sound.id)}
                                     onKeyDown={secondaryKey(() => togglePreview(sound.id))}
@@ -174,7 +174,7 @@ function SoundTile({ sound }: { sound: SoundItem; }) {
                                     data-secondary
                                     role="button"
                                     tabIndex={0}
-                                    aria-label={`${sound.id}の音量設定`}
+                                    aria-label={`${sound.label}の音量設定`}
                                     className={SoundClasses.secondaryButton}
                                     onClick={() => setVolumeOpen(v => !v)}
                                     onKeyDown={secondaryKey(() => setVolumeOpen(v => !v))}
@@ -227,12 +227,30 @@ function StatusNotice({ onOpenSettings }: { onOpenSettings: () => void; }) {
     );
 }
 
+// 畳んだフォルダ。ポップアウトを閉じても Discord を再起動するまでは覚えておく（純正と同じ）
+const collapsedFolders = new Set<string>();
+
 function MainView({ onOpenSettings }: { onOpenSettings: () => void; }) {
     const sounds = useVoiceCord(s => s.sounds);
-    const folder = useVoiceCord(s => s.folder);
+    const folders = useVoiceCord(s => s.folders);
     const search = useVoiceCord(s => s.search);
-    const { setSearch, chooseFolder, reload, stopAll } = store.getState();
-    const filtered = useMemo(() => sounds.filter(s => s.id.toLowerCase().includes(search.toLowerCase())), [sounds, search]);
+    const { setSearch, addFolder, reload, stopAll } = store.getState();
+    const [, rerender] = useState(0);
+    const contentRef = useRef<HTMLDivElement>(null);
+    const { active, jump } = useFolderScroll(contentRef, folders);
+
+    const query = search.toLowerCase();
+    const groups = useMemo(() => folders.map(folder => {
+        const all = sounds.filter(s => s.folder === folder);
+        return { folder, all, shown: query === "" ? all : all.filter(s => s.label.toLowerCase().includes(query)) };
+    }), [folders, sounds, query]);
+    const hits = groups.reduce((n, g) => n + g.shown.length, 0);
+
+    const toggle = (folder: string) => {
+        if (collapsedFolders.has(folder)) collapsedFolders.delete(folder);
+        else collapsedFolders.add(folder);
+        rerender(n => n + 1);
+    };
 
     return (
         <>
@@ -240,42 +258,54 @@ function MainView({ onOpenSettings }: { onOpenSettings: () => void; }) {
                 <div className="vc-voicecord-grow">
                     <DiscordSearchBar query={search} onChange={setSearch} onClear={() => setSearch("")} placeholder="サウンドを検索" aria-label="サウンドを検索" />
                 </div>
+                <IconButton label="サウンド一覧を再読込" onClick={() => void reload()}><RestartIcon width={20} height={20} /></IconButton>
                 <IconButton label="VoiceCord の設定" onClick={onOpenSettings}><CogWheel width={20} height={20} /></IconButton>
             </div>
             <StatusNotice onOpenSettings={onOpenSettings} />
-            <ScrollerThin className="vc-voicecord-scroller">
-                <div className={SectionClasses.sectionContainer}>
-                    <div className={classes(SectionClasses.sectionHeader, "vc-voicecord-section-header")}>
-                        <div className={SectionClasses.sectionHeaderContent}>
-                            <DiscordText variant="body-sm/semibold" tag="h1" className={SectionClasses.sectionTitle}>
-                                {folder ? folderName(folder) : "フォルダ未選択"}
-                            </DiscordText>
-                        </div>
-                        <Small><Mono>{filtered.length}/{sounds.length}</Mono></Small>
-                        <span className="vc-voicecord-grow" />
-                        <IconButton label="サウンドフォルダを選択" onClick={() => void chooseFolder()}><FolderIcon width={16} height={16} /></IconButton>
-                        <IconButton label="サウンド一覧を再読込" onClick={() => void reload()}><RestartIcon width={16} height={16} /></IconButton>
+            <div className="vc-voicecord-body">
+                <FolderBar folders={folders} active={active} onJump={jump} onAdd={() => void addFolder()} />
+                <ScrollerThin className="vc-voicecord-scroller">
+                    <div ref={contentRef}>
+                        {/* 「フォルダが無い」「検索で 0 件」「フォルダに音源が無い」は原因も次の行動も違うので分ける */}
+                        {folders.length === 0 ? (
+                            <div className="vc-voicecord-empty">
+                                <DiscordText variant="body-md/medium">サウンドフォルダがありません</DiscordText>
+                                <Small>wav / mp3 / ogg などの音声ファイルを置いたフォルダを追加してください。</Small>
+                                <Btn size="sm" onClick={() => void addFolder()}>フォルダを追加</Btn>
+                            </div>
+                        ) : query !== "" && hits === 0 ? (
+                            <div className="vc-voicecord-empty">
+                                <DiscordText variant="body-md/medium">「{search}」に一致するサウンドがありません</DiscordText>
+                                <Btn size="sm" variant="secondary" onClick={() => setSearch("")}>検索を消す</Btn>
+                            </div>
+                        ) : groups.map(({ folder, all, shown }) => {
+                            // 検索中は、一致の無いフォルダを出さない（純正と同じ）
+                            if (query !== "" && shown.length === 0) return null;
+                            const collapsed = query === "" && collapsedFolders.has(folder);
+                            return (
+                                <div key={folder} data-folder={folder}>
+                                    <FolderHeader
+                                        folder={folder}
+                                        collapsed={collapsed}
+                                        onToggle={() => toggle(folder)}
+                                        accessory={<Small><Mono>{query === "" ? all.length : `${shown.length}/${all.length}`}</Mono></Small>}
+                                    />
+                                    {collapsed ? null : all.length === 0 ? (
+                                        <div className="vc-voicecord-folder-empty">
+                                            <Small>このフォルダにサウンドがありません（見つからないか、音声ファイルがありません）</Small>
+                                            <Small><Mono className="vc-voicecord-break">{folder}</Mono></Small>
+                                        </div>
+                                    ) : rowsOf(shown).map(row => (
+                                        <ul key={row[0].id} className={SectionClasses.soundRow} aria-label="サウンド">
+                                            {row.map(sound => <SoundTile key={sound.id} sound={sound} />)}
+                                        </ul>
+                                    ))}
+                                </div>
+                            );
+                        })}
                     </div>
-                </div>
-                {/* 「検索で 0 件」と「フォルダに音源が無い」は原因も次の行動も違うので分ける */}
-                {sounds.length === 0 ? (
-                    <div className="vc-voicecord-empty">
-                        <DiscordText variant="body-md/medium">このフォルダにサウンドがありません</DiscordText>
-                        <Small><Mono>{folder || "（フォルダが選ばれていません）"}</Mono></Small>
-                        <Small>wav / mp3 / ogg などの音声ファイルをこのフォルダに置くか、別のフォルダを選んでください。</Small>
-                        <Btn size="sm" onClick={() => void chooseFolder()}>サウンドフォルダを選ぶ</Btn>
-                    </div>
-                ) : filtered.length === 0 ? (
-                    <div className="vc-voicecord-empty">
-                        <DiscordText variant="body-md/medium">「{search}」に一致するサウンドがありません</DiscordText>
-                        <Btn size="sm" variant="secondary" onClick={() => setSearch("")}>検索を消す</Btn>
-                    </div>
-                ) : rowsOf(filtered).map(row => (
-                    <ul key={row[0].id} className={SectionClasses.soundRow} aria-label="サウンド">
-                        {row.map(sound => <SoundTile key={sound.id} sound={sound} />)}
-                    </ul>
-                ))}
-            </ScrollerThin>
+                </ScrollerThin>
+            </div>
             <div className="vc-voicecord-footer">
                 <MasterFader className="vc-voicecord-grow" />
                 <NormalizeButton />
@@ -292,8 +322,8 @@ function StatusSection() {
     const krispHint = useVoiceCord(s => s.krispHint && s.connection === "waiting");
     const problems = status ? statusProblems(status) : [];
     // 普段は見ない診断なので畳むが、不具合があるときは開いておく（畳んだ中に隠さない）
-    const hasIssue = problems.length > 0 || krispHint || !state.buttonSeen;
-    const issueKey = hasIssue ? JSON.stringify([problems, krispHint, state.buttonSeen]) : "";
+    const hasIssue = problems.length > 0 || krispHint || !state.tabsSeen;
+    const issueKey = hasIssue ? JSON.stringify([problems, krispHint, state.tabsSeen]) : "";
     const [expanded, setExpanded] = useState(hasIssue);
     useEffect(() => {
         if (issueKey !== "") setExpanded(true);
@@ -308,7 +338,7 @@ function StatusSection() {
         rows.push(["注入レート", status.sampleRate === null ? "未計測" : `${status.sampleRate} Hz（${status.frameSamples ?? "?"} サンプル）`]);
     }
     if (krispHint) rows.push(["VC 検出", "Krisp の処理を検出できません（ノイズ抑制を Krisp にし、ミュートを解除）"]);
-    rows.push(["ボタン", state.buttonSeen ? "音声パネル（サウンドボードの隣）" : "未表示（VC に入ると音声パネルに出ます。出ない場合は画面右下の予備ボタン）"]);
+    rows.push(["表示場所", state.tabsSeen ? "音声パネルのサウンドボードの「VoiceCord」タブ" : "画面右下の予備ボタン（サウンドボードにタブを差し込めませんでした）"]);
 
     return (
         <section aria-label="接続状態">
@@ -334,17 +364,17 @@ function StatusSection() {
 }
 
 function SettingsView({ onBack }: { onBack: () => void; }) {
-    const folder = useVoiceCord(s => s.folder);
+    const folders = useVoiceCord(s => s.folders);
     const sounds = useVoiceCord(s => s.sounds);
     const entryEnabled = useVoiceCord(s => s.settings.entrySoundEnabled);
     const hideCamera = useVoiceCord(s => s.settings.hideCameraButton);
     const unlockSoundboard = useVoiceCord(s => s.settings.unlockSoundboard);
     const entrySrcId = useVoiceCord(s => s.settings.entrySoundSrcId);
-    const { patchSettings: patch, chooseFolder, reload } = store.getState();
+    const { patchSettings: patch, addFolder, removeFolder, moveFolder, reload } = store.getState();
     // 有効でも音源が未選択・見つからなければ鳴らないので、スイッチとは別に説明で伝える
     const entryDescription = entrySrcId === "" ? "サウンドが未選択のため鳴りません"
-        : !sounds.some(s => s.id === entrySrcId) ? `「${entrySrcId}」が見つかりません（ファイルが移動・削除された可能性）`
-            : entrySrcId;
+        : !sounds.some(s => s.id === entrySrcId) ? `「${soundIdLabel(entrySrcId)}」が見つかりません（ファイルの移動・削除か、フォルダを外した可能性）`
+            : soundIdLabel(entrySrcId);
 
     return (
         <>
@@ -363,11 +393,23 @@ function SettingsView({ onBack }: { onBack: () => void; }) {
                 </section>
                 <section aria-label="サウンドフォルダ">
                     <SectionTitle>サウンドフォルダ</SectionTitle>
+                    {folders.map((folder, i) => (
+                        <Row
+                            key={folder}
+                            label={folderName(folder)}
+                            description={<Mono className="vc-voicecord-break">{folder}</Mono>}
+                            control={<>
+                                <Btn variant="secondary" size="sm" disabled={i === 0} onClick={() => moveFolder(folder, -1)} label={`${folderName(folder)}を上へ`}>上へ</Btn>
+                                <Btn variant="secondary" size="sm" disabled={i === folders.length - 1} onClick={() => moveFolder(folder, 1)} label={`${folderName(folder)}を下へ`}>下へ</Btn>
+                                <Btn variant="danger" size="sm" onClick={() => removeFolder(folder)} label={`${folderName(folder)}を外す`}>外す</Btn>
+                            </>}
+                        />
+                    ))}
                     <Row
-                        label={folder ? folderName(folder) : "フォルダ未選択"}
-                        description={folder ? <Mono className="vc-voicecord-break">{folder}</Mono> : undefined}
+                        label="フォルダを追加"
+                        description="外してもファイルは消えません。音量の設定も残り、追加し直すと戻ります"
                         control={<>
-                            <Btn variant="secondary" size="sm" onClick={() => void chooseFolder()}>選ぶ</Btn>
+                            <Btn variant="secondary" size="sm" onClick={() => void addFolder()}>追加</Btn>
                             <Btn variant="secondary" size="sm" onClick={() => void reload()}>再読込</Btn>
                         </>}
                     />
@@ -376,7 +418,7 @@ function SettingsView({ onBack }: { onBack: () => void; }) {
                     <SectionTitle>表示</SectionTitle>
                     <FormSwitch
                         title="ビデオボタンを隠す"
-                        description="音声パネルのビデオボタンを隠し、VoiceCord のボタンを純正のボタンと同じ幅で並べます"
+                        description="音声パネルのビデオ（カメラ）ボタンを隠します"
                         value={hideCamera}
                         onChange={v => patch({ hideCameraButton: v })}
                     />
@@ -396,11 +438,12 @@ function SettingsView({ onBack }: { onBack: () => void; }) {
     );
 }
 
-export function SoundboardPopout() {
+/** embedded: 純正サウンドボードのタブの中に置く。枠（背景・影・大きさ）はタブの側が持つ */
+export function SoundboardPopout({ embedded }: { embedded?: boolean; }) {
     // 閉じたら次に開いたときはサウンドの一覧から始める（純正と同じ）。ポップアウトごと作り直されるので状態は持ち越さない
     const [view, setView] = useState<"main" | "settings">("main");
     return (
-        <div className={classes(PickerClasses.picker, "vc-voicecord-picker")} role="dialog" aria-label="VoiceCord サウンドボード">
+        <div className={embedded ? "vc-voicecord-embedded" : classes(PickerClasses.picker, "vc-voicecord-picker")} role={embedded ? undefined : "dialog"} aria-label="VoiceCord サウンドボード">
             {view === "main"
                 ? <MainView onOpenSettings={() => setView("settings")} />
                 : <SettingsView onBack={() => setView("main")} />}

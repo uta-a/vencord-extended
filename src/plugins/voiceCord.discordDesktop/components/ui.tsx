@@ -48,7 +48,7 @@ export function Btn({ variant = "primary", size = "md", className, children, dis
 }
 
 // Discord の Slider は内部で値を持つ。外から値が変わったとき（ドラッグ以外の操作）だけ作り直して追従させる
-export function VSlider({ value, min, max, step = 1, onChange, onCommit, label, render, markers, className }: {
+export function VSlider({ value, min, max, step = 1, onChange, onCommit, label, render, markers, className, compact }: {
     value: number;
     min: number;
     max: number;
@@ -59,6 +59,8 @@ export function VSlider({ value, min, max, step = 1, onChange, onCommit, label, 
     render?: (v: number) => string;
     markers?: number[];
     className?: string;
+    // 目盛りの数字を出さず、高さを詰める（目盛りの線は残す）。狭い帯に置くとき用
+    compact?: boolean;
 }) {
     const last = useRef(value);
     const generation = useRef(0);
@@ -73,7 +75,7 @@ export function VSlider({ value, min, max, step = 1, onChange, onCommit, label, 
     // Discord の Slider は markers の両端を範囲として描くので、下限と上限を必ず含める
     const allMarkers = [...new Set([min, ...(markers ?? []), max])].sort((a, b) => a - b);
     return (
-        <div className={classes("vc-voicecord-slider", className)} aria-label={label}>
+        <div className={classes("vc-voicecord-slider", compact && "vc-voicecord-slider-compact", className)} aria-label={label}>
             <DiscordSlider
                 key={generation.current}
                 initialValue={value}

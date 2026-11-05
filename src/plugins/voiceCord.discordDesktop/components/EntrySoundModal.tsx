@@ -12,7 +12,9 @@ import { classes } from "@utils/misc";
 import type { RenderModalProps } from "@vencord/discord-types";
 import { Modal, openModal, ScrollerThin, showToast, useMemo, useState } from "@webpack/common";
 
+import { soundIdLabel } from "../../../voicecord/shared/soundId";
 import { DiscordSearchBar, DiscordText } from "./discord";
+import { folderName } from "./Folders";
 import { CheckIcon, HeadphonesIcon, StopIcon } from "./icons";
 import { Btn, Mono, Small, VSlider } from "./ui";
 
@@ -43,8 +45,9 @@ function EntrySoundModal({ modalProps }: { modalProps: RenderModalProps; }) {
         if (settings.entrySoundVolume === 0) showToast({ text: "入場音の音量が 0% です。音が出ていないかもしれません" });
     };
 
-    const filtered = useMemo(() => sounds.filter(s => s.id.toLowerCase().includes(query.toLowerCase())), [sounds, query]);
+    const filtered = useMemo(() => sounds.filter(s => s.label.toLowerCase().includes(query.toLowerCase())), [sounds, query]);
     const selected = settings.entrySoundSrcId;
+    const manyFolders = useVoiceCord(s => s.folders.length > 1);
     const selectedMissing = selected !== "" && !sounds.some(s => s.id === selected);
 
     return (
@@ -60,8 +63,8 @@ function EntrySoundModal({ modalProps }: { modalProps: RenderModalProps; }) {
                 description={selected === ""
                     ? "サウンドが未選択のため鳴りません"
                     : selectedMissing
-                        ? `「${selected}」が見つかりません（ファイルが移動・削除された可能性）`
-                        : `現在の音源: ${selected}`}
+                        ? `「${soundIdLabel(selected)}」が見つかりません（ファイルの移動・削除か、フォルダを外した可能性）`
+                        : `現在の音源: ${soundIdLabel(selected)}`}
                 value={settings.entrySoundEnabled}
                 onChange={v => patch({ entrySoundEnabled: v })}
             />
@@ -83,17 +86,19 @@ function EntrySoundModal({ modalProps }: { modalProps: RenderModalProps; }) {
                                         <button
                                             type="button"
                                             aria-pressed={isSelected}
-                                            title={sound.name}
+                                            title={sound.path}
                                             className={classes("vc-voicecord-entry-pick", isSelected && "vc-voicecord-entry-selected")}
                                             onClick={() => patch({ entrySoundSrcId: sound.id })}
                                         >
                                             <CheckIcon size={14} className={isSelected ? undefined : "vc-voicecord-hidden"} />
-                                            <DiscordText variant="body-sm/normal" lineClamp={1}>{sound.id}</DiscordText>
+                                            <DiscordText variant="body-sm/normal" lineClamp={1}>{sound.label}</DiscordText>
+                                            {/* 複数のフォルダに同じ名前があっても選び分けられるよう、フォルダ名を添える */}
+                                            {manyFolders && <Small className="vc-voicecord-entry-folder">{folderName(sound.folder)}</Small>}
                                         </button>
                                         <Btn
                                             variant="ghost"
                                             size="icon"
-                                            label={`${sound.id}を試聴`}
+                                            label={`${sound.label}を試聴`}
                                             onClick={() => {
                                                 if (!isPreviewing) warnIfMuted();
                                                 togglePreview(sound.id, settings.entrySoundVolume);

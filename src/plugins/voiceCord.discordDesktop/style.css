@@ -10,6 +10,41 @@
     flex-direction: column;
 }
 
+/* ---- 純正サウンドボードのタブ（純正のポップアウトと同じ 531×420 の中身に、タブの列を足す） ---- */
+
+.vc-voicecord-tabs {
+    height: auto;
+}
+
+.vc-voicecord-tabs-nav {
+    padding-top: 12px;
+    flex-shrink: 0;
+}
+
+.vc-voicecord-tabs-body {
+    /* 純正の中身の左端のカテゴリの列は、位置を親の枠から測る。タブの分ずれないよう、ここを基準にする */
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 420px;
+    min-height: 0;
+}
+
+/* 純正の中身は自分の枠（影・角丸・大きさ）を持つので、タブの枠の中では外す */
+.vc-voicecord-tabs-body > * {
+    flex: 1;
+    min-height: 0;
+    width: auto;
+    height: auto;
+    box-shadow: none;
+    border-radius: 0;
+}
+
+.vc-voicecord-embedded {
+    display: flex;
+    flex-direction: column;
+}
+
 .vc-voicecord-header {
     display: flex;
     align-items: center;
@@ -23,6 +58,46 @@
     min-height: 0;
     max-height: 456px;
     padding: 0 24px 12px 28px;
+}
+
+/* ---- サウンドの一覧（左に純正と同じフォルダのバー、右にフォルダごとのセクション） ---- */
+
+.vc-voicecord-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+.vc-voicecord-body .vc-voicecord-scroller {
+    padding: 0 12px 12px 8px;
+}
+
+.vc-voicecord-folderbar {
+    flex-shrink: 0;
+    width: 48px;
+    overflow: hidden auto;
+    scrollbar-width: none;
+    background-color: var(--background-base-lower);
+    border-radius: 0 0 0 8px;
+}
+
+.vc-voicecord-folderbar-list {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px;
+}
+
+.vc-voicecord-folder-empty {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 8px 12px;
+}
+
+/* タブの中では枠の高さが決まっているので、残りをすべて使う */
+.vc-voicecord-embedded .vc-voicecord-scroller {
+    max-height: none;
 }
 
 .vc-voicecord-settings {
@@ -43,7 +118,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 12px;
+    padding: 6px 12px;
     border-top: 1px solid var(--border-subtle);
     flex-shrink: 0;
 }
@@ -112,6 +187,12 @@
     gap: 8px;
 }
 
+.vc-voicecord-fader-value {
+    flex: none;
+    min-width: 56px;
+    text-align: right;
+}
+
 .vc-voicecord-slider {
     min-width: 0;
 }
@@ -119,6 +200,24 @@
 /* 目盛りの文字は狭い列で折り返さない（Discord の Slider のクラス名は短縮されているので部分一致で当てる） */
 .vc-voicecord-slider [class*="markValue"] {
     white-space: nowrap;
+}
+
+/* 詰めたスライダー: 目盛りの数字の段（--bar-offset の 24px）を無くし、目盛りの線だけ残す */
+.vc-voicecord-slider-compact [class*="hasMarks_"] {
+    --bar-offset: 0px;
+}
+
+.vc-voicecord-slider-compact [class*="markValue_"] {
+    display: none;
+}
+
+.vc-voicecord-slider-compact [class*="mark_"] {
+    height: 24px;
+    justify-content: center;
+}
+
+.vc-voicecord-slider-compact [class*="markDash_"] {
+    height: 12px;
 }
 
 .vc-voicecord-fixed {
@@ -442,6 +541,11 @@
 
 .vc-voicecord-entry-pick:hover {
     background: var(--background-mod-subtle, var(--background-modifier-hover));
+}
+
+.vc-voicecord-entry-folder {
+    margin-left: auto;
+    flex-shrink: 0;
 }
 
 .vc-voicecord-entry-selected {

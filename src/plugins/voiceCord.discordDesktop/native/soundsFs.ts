@@ -6,6 +6,7 @@
 
 import path from "node:path";
 
+import { makeSoundId } from "../../../voicecord/shared/soundId.js";
 import type { SoundItem } from "../../../voicecord/shared/types.js";
 
 /**
@@ -57,7 +58,7 @@ function isAudio(name: string): boolean {
 }
 
 /**
- * フォルダ直下の音声ファイルを列挙する。id は拡張子を除いたファイル名。
+ * フォルダ直下の音声ファイルを列挙する。label は拡張子を除いたファイル名、id はフォルダの鍵と label（shared/soundId.ts）。
  *
  * id は sourceVolumes のキーであり入場音の指定でもある。衝突すると別の音源が
  * 同じ音量設定を掴み、タイルを押しても先頭の音が鳴る。そのため「払い出し済みの
@@ -109,10 +110,12 @@ export function scanFolder(fs: SoundsFs, folder: string): SoundItem[] {
       // 取れなければ既定値のまま。走査ごと落とすほどのことではない
     }
 
-    items.push({ id, name, path: path.join(folder, name), fp, kind: "file" });
+    items.push({ id: makeSoundId(folder, id), label: id, folder, name, path: path.join(folder, name), fp, kind: "file" });
   }
   return items;
 }
+
+export const OUTSIDE_ERROR = "音源フォルダの外は読み取れません";
 
 export type ResolveResult = { ok: true; path: string } | { ok: false; error: string };
 
@@ -149,7 +152,7 @@ export function resolveSoundPath(fs: SoundsFs, folder: string, requested: string
   }
 
   if (!isInside(realFolder, realTarget)) {
-    return { ok: false, error: "音源フォルダの外は読み取れません" };
+    return { ok: false, error: OUTSIDE_ERROR };
   }
   // リンクの名前だけ .wav にして、配下の音声以外（config.json など）を指させる抜け道を塞ぐ
   if (!isAudio(realTarget)) return { ok: false, error: "音声ファイルではありません" };
