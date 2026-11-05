@@ -241,7 +241,7 @@ UI は Vencord プラグインとしてメインワールドで動かし、Disco
 
 - 設定は `folders: string[]`。並び順がそのまま表示順。空にもできる。重複（大文字小文字・区切りの違い）は読み込みと保存のたびに落とす
 - サウンドの ID は「フォルダの鍵 | フォルダ内の名前」（`shared/soundId.ts`）。鍵は区切りをスラッシュにそろえて小文字にしたパス。`|` は Windows のパスにもファイル名にも使えないので取り違えない。フォルダを外したり並べ替えたりしても、ほかのフォルダの ID（音源別音量・入場サウンドのキー）は変わらない
-- 単一フォルダの時代の設定（`folders` が無い）は、読み込み時に `folder` を `folders` の 1 つ目に移し、音源別音量と入場サウンドのキーをそのフォルダの ID に直す。旧来の `folder` は残さない（このため、古いビルドに戻すと既定のフォルダに戻る）
+- 単一フォルダの時代の設定（`folders` が無いか、配列でない）は、読み込み時に `folder` を `folders` の 1 つ目に移し、音源別音量と入場サウンドのキーをそのフォルダの ID に直す。旧来の `folder` は残さない（このため、古いビルドに戻すと既定のフォルダに戻る）
 - 一覧は、左に純正と同じバー（フォルダ名の頭文字・選択中の印・末尾の「＋」で追加）、右にフォルダごとのセクション（見出しを押すと畳む）。クラスは純正サウンドボードの `category` / `categoryPill` / ピル / `guildIcon` を使う
 - 検索中は一致の無いフォルダを出さない。畳んだフォルダは Discord を再起動するまで覚える
 - 設定画面にフォルダの一覧を出し、追加・上下の並べ替え・外すをできるようにした。外してもファイルと音量の設定は消さない
@@ -269,7 +269,7 @@ UI は Vencord プラグインとしてメインワールドで動かし、Disco
 | 他サーバーのサウンドの解除（`lockedSounds.ts`） | 純正タイルの `onClick` の先頭をパッチで分岐させる（find: `/showLockForDisabledSound:\i=!0/`。match は `canUseSound` の否定とサウンドの変数を後読みで拾う）。鍵と Nitro の誘導は html の印と CSS で隠す |
 | 純正サウンドボードの停止ボタン（`soundboardStop.ts`） | ヘッダーの `renderHeaderAccessories` をパッチで包み、音量アイコンの前に並べる（find: `"SoundboardSoundGrid"`） |
 | VoiceCord で鳴らしている純正サウンドの再生中の枠 | サウンド ID ごとのセレクタを生成し、純正の再生中と同じ緑の枠を CSS で付ける |
-| カメラボタン非表示（`cameraButton.ts`） | 設定で html に印を付け、音声パネルのボタン列（CSS モジュールの `actionButtons` クラス）の先頭を CSS で隠す（パネルの関数には途中で return する分岐があるので、パッチでフックは使えない） |
+| カメラボタン非表示（`cameraButton.ts`） | 設定で html に印を付け、音声パネルのボタン列（CSS モジュールの `actionButtons` クラス）の先頭を CSS で隠す（パネルの関数には途中で return する分岐があるので、パッチでフックは使えない）。クラスは `waitFor` でモジュールが読み込まれた時点に受け取る（`findCssClassesLazy` は起動直後に見つからなかった結果を覚えてしまう） |
 | VC 在席の判定（`presence.ts`） | `SelectedChannelStore` の変化を store へ渡し、hook の vc イベントと併用する |
 | 入場サウンド | store のロジックのまま（hook の gateInfo で Connection* の張り替えを検知して鳴らす。flux の購読より誤発火が少ない） |
 | 緊急停止 Ctrl+Alt+Shift+X（`keyboard.ts`） | renderer の keydown を維持。重ねて main 側の `before-input-event` でも捕まえる |
