@@ -367,7 +367,6 @@ function SettingsView({ onBack }: { onBack: () => void; }) {
     const folders = useVoiceCord(s => s.folders);
     const sounds = useVoiceCord(s => s.sounds);
     const entryEnabled = useVoiceCord(s => s.settings.entrySoundEnabled);
-    const hideCamera = useVoiceCord(s => s.settings.hideCameraButton);
     const unlockSoundboard = useVoiceCord(s => s.settings.unlockSoundboard);
     const entrySrcId = useVoiceCord(s => s.settings.entrySoundSrcId);
     const { patchSettings: patch, addFolder, removeFolder, moveFolder, reload } = store.getState();
@@ -412,15 +411,6 @@ function SettingsView({ onBack }: { onBack: () => void; }) {
                             <Btn variant="secondary" size="sm" onClick={() => void addFolder()}>追加</Btn>
                             <Btn variant="secondary" size="sm" onClick={() => void reload()}>再読込</Btn>
                         </>}
-                    />
-                </section>
-                <section aria-label="表示">
-                    <SectionTitle>表示</SectionTitle>
-                    <FormSwitch
-                        title="ビデオボタンを隠す"
-                        description="音声パネルのビデオ（カメラ）ボタンを隠します"
-                        value={hideCamera}
-                        onChange={v => patch({ hideCameraButton: v })}
                     />
                 </section>
                 <section aria-label="サウンドボード">

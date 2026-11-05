@@ -25,12 +25,13 @@ import path from "path";
 
 import { type ConfigStore, createConfigStore, defaultConfig, defaultSoundsFolder } from "../../../voicecord/shared/config";
 import type { VoiceCordEvent, VoiceCordStatus } from "../../../voicecord/shared/ipc";
-import { voiceCordPaths } from "../../../voicecord/shared/paths";
+import { type VoiceCordPaths, voiceCordPaths } from "../../../voicecord/shared/paths";
 import { isSoundboardSoundId } from "../../../voicecord/shared/soundboard";
 import type { AppConfig, InjectPlayReq, LoadedConfig, SoundItem } from "../../../voicecord/shared/types";
 import { createEngineHost, type EngineHost, type EngineProcessLike } from "./engineHost";
 import { createEventQueue, type NextResult } from "./eventQueue";
 import { guessBranch, locateInstall } from "./locate";
+import { applyStagedRuntime, downloadLimited, type RequiredRuntime, runtimeState, stageRuntime } from "./runtimeUpdate";
 import { createSoundboardCache, resolveReadableSoundPath, type SoundboardCache } from "./soundboardCache";
 import { scanFolder, type SoundsFs } from "./soundsFs";
 import { runSubsystems, type Subsystem, type SubsystemLog, summarize } from "./subsystems";
@@ -106,9 +107,109 @@ function needEngine(): EngineHost {
     return engine;
 }
 
+// ---- エンジンとランタイム ----
+
+declare const VOICECORD_RUNTIME: RequiredRuntime | null;
+// リリースのビルドで埋める（scripts/build/voicecord.mjs）。開発中は null で、dist のランタイムをそのまま使う
+const REQUIRED_RUNTIME: RequiredRuntime | null = typeof VOICECORD_RUNTIME === "undefined" ? null : VOICECORD_RUNTIME;
+
+// start / stop のたびに進める世代。取得を待つ間に止められたら、古い取得の続きでエンジンを起こさない
+let lifeGen = 0;
+let staging: Promise<void> | null = null;
+// 進行中の取得の取り消し。プラグインを止めたら取得もやめる（止める前の取得を、次の start が待ち続けないように）
+let stagingAbort: AbortController | null = null;
+
+// zip は 35 MB 前後。取り違えや巨大な応答で main のメモリを使い切らないよう上限を設ける
+const RUNTIME_MAX_BYTES = 200 * 1024 * 1024;
+const RUNTIME_TIMEOUT_MS = 10 * 60_000;
+
+function startEngine(paths: VoiceCordPaths) {
+    if (!fs.existsSync(paths.engine)) throw new Error(`エンジンが見つかりません: ${paths.engine}`);
+    const host = createEngineHost({
+        fork: () => utilityProcess.fork(paths.engine, [], {
+            stdio: "pipe",
+            serviceName: "VoiceCord engine"
+        }) as unknown as EngineProcessLike,
+        emit: e => {
+            // vc は変化したときしか来ない。UI を再読み込みしても在席と再生中を返せるよう覚えておく
+            const vcActive = nextVcActive(status.vcActive, e);
+            const playing = nextPlaying(status.playing, e);
+            if (e.ev === "log") log.info(`engine ${e.level}: ${e.message}`);
+            events.push(e);
+            if (vcActive !== status.vcActive || playing !== status.playing) {
+                status.vcActive = vcActive;
+                status.playing = playing;
+                pushStatus();
+            }
+        },
+        onState: (state, attachedPid, error, rate) => {
+            status.engine = state;
+            status.vcActive = vcActiveForState(state, status.vcActive);
+            status.attachedPid = attachedPid;
+            // 注入レートは Discord 側の都合で変わる。決め打ちにせず実測値を運ぶ
+            status.sampleRate = rate.sampleRate;
+            status.frameSamples = rate.frameSamples;
+            status.enginePid = host.pid();
+            status.lastError = error;
+            pushStatus();
+        },
+        setTimer: (fn, ms) => setTimeout(fn, ms),
+        clearTimer: h => clearTimeout(h as NodeJS.Timeout),
+        now: () => Date.now()
+    });
+    engine = host;
+    host.start();
+}
+
+function stageOnce(paths: VoiceCordPaths, required: RequiredRuntime): Promise<void> {
+    if (staging) return staging;
+    const abort = stagingAbort = new AbortController();
+    const fetchZip = (url: string, signal?: AbortSignal) =>
+        downloadLimited(url, { maxBytes: RUNTIME_MAX_BYTES, timeoutMs: RUNTIME_TIMEOUT_MS, signal });
+    const job: Promise<void> = stageRuntime(fs, paths.runtimeDir, required, fetchZip, abort.signal).finally(() => {
+        if (staging === job) {
+            staging = null;
+            stagingAbort = null;
+        }
+    });
+    staging = job;
+    return job;
+}
+
+async function fetchRuntimeThenStart(paths: VoiceCordPaths, required: RequiredRuntime, gen: number) {
+    try {
+        await stageOnce(paths, required);
+        if (gen !== lifeGen) return;
+        applyStagedRuntime(fs, paths.runtimeDir, required);
+        // ほかの Discord が入れ替え中で見送ったときも、そちらが置いたものがあれば起こせる
+        if (runtimeState(fs, paths.runtimeDir, required) === "missing") throw new Error("ランタイムを入れ替えられませんでした（ほかの Discord が入れ替え中の可能性があります。Discord を再起動してください）");
+        status.lastError = null;
+        startEngine(paths);
+    } catch (e) {
+        if (gen !== lifeGen) return;
+        log.error("ランタイムを取得できませんでした", e);
+        status.engine = "failed";
+        status.lastError = `VoiceCord のランタイムを取得できませんでした: ${e instanceof Error ? e.message : String(e)}`;
+    }
+    pushStatus();
+}
+
+async function stageRuntimeInBackground(paths: VoiceCordPaths, required: RequiredRuntime, gen: number) {
+    try {
+        await stageOnce(paths, required);
+        log.info("新しいランタイムを用意しました。次に Discord を起動したときに入れ替えます");
+    } catch (e) {
+        if (gen !== lifeGen) return;
+        log.error("新しいランタイムを取得できませんでした", e);
+        status.degraded = [...status.degraded, { name: "runtime", error: `新しいランタイムを取得できませんでした（今の版で動いています）: ${e instanceof Error ? e.message : String(e)}` }];
+        pushStatus();
+    }
+}
+
 function start() {
     if (started) return;
     started = true;
+    const gen = ++lifeGen;
     status.degraded = [];
 
     const paths = voiceCordPaths({
@@ -134,41 +235,27 @@ function start() {
             // frida はこの子の中だけ。ネイティブが落ちても Discord は生き残る
             name: "engine",
             run: () => {
-                if (!fs.existsSync(paths.engine)) throw new Error(`エンジンが見つかりません: ${paths.engine}`);
-                const host = createEngineHost({
-                    fork: () => utilityProcess.fork(paths.engine, [], {
-                        stdio: "pipe",
-                        serviceName: "VoiceCord engine"
-                    }) as unknown as EngineProcessLike,
-                    emit: e => {
-                        // vc は変化したときしか来ない。UI を再読み込みしても在席と再生中を返せるよう覚えておく
-                        const vcActive = nextVcActive(status.vcActive, e);
-                        const playing = nextPlaying(status.playing, e);
-                        if (e.ev === "log") log.info(`engine ${e.level}: ${e.message}`);
-                        events.push(e);
-                        if (vcActive !== status.vcActive || playing !== status.playing) {
-                            status.vcActive = vcActive;
-                            status.playing = playing;
-                            pushStatus();
-                        }
-                    },
-                    onState: (state, attachedPid, error, rate) => {
-                        status.engine = state;
-                        status.vcActive = vcActiveForState(state, status.vcActive);
-                        status.attachedPid = attachedPid;
-                        // 注入レートは Discord 側の都合で変わる。決め打ちにせず実測値を運ぶ
-                        status.sampleRate = rate.sampleRate;
-                        status.frameSamples = rate.frameSamples;
-                        status.enginePid = host.pid();
-                        status.lastError = error;
-                        pushStatus();
-                    },
-                    setTimer: (fn, ms) => setTimeout(fn, ms),
-                    clearTimer: h => clearTimeout(h as NodeJS.Timeout),
-                    now: () => Date.now()
-                });
-                engine = host;
-                host.start();
+                const required = REQUIRED_RUNTIME;
+                if (required) {
+                    // 前回までに用意した新しい版があれば、エンジンを起こす前に入れ替える
+                    try {
+                        applyStagedRuntime(fs, paths.runtimeDir, required);
+                    } catch (e) {
+                        // 入れ替えに失敗しても今ある版で起こす（旧版は戻してあるか、.old に残してある）
+                        log.error("新しいランタイムに入れ替えられませんでした", e);
+                        status.degraded = [...status.degraded, { name: "runtime", error: `新しいランタイムに入れ替えられませんでした（今の版で動いています）: ${e instanceof Error ? e.message : String(e)}` }];
+                    }
+                    const state = runtimeState(fs, paths.runtimeDir, required);
+                    if (state === "missing") {
+                        // 導入直後などでランタイムが無い。取得してから起こす（その間は starting のまま理由を出す）
+                        status.lastError = "VoiceCord のランタイムを取得しています（初回だけ数十 MB をダウンロードします）";
+                        void fetchRuntimeThenStart(paths, required, gen);
+                        return;
+                    }
+                    // 古い版はそのまま使い、新しい版は裏で用意して次の起動で入れ替える
+                    if (state === "outdated") void stageRuntimeInBackground(paths, required, gen);
+                }
+                startEngine(paths);
             }
         },
         {
@@ -182,7 +269,8 @@ function start() {
 
     const { failures } = summarize(runSubsystems(subsystems, log));
     registerStopKey();
-    status.degraded = failures;
+    // サブシステムの中で積んだ警告（ランタイムを入れ替えられなかった等）を消さない
+    status.degraded = [...status.degraded, ...failures];
     // エンジンが起動できなかったときだけ engine を failed にする。他の失敗は degraded で伝える
     const engineFailure = failures.find(f => f.name === "engine");
     if (engineFailure) {
@@ -195,6 +283,8 @@ function start() {
 function stopEverything() {
     if (!started) return;
     started = false;
+    lifeGen++;
+    stagingAbort?.abort();
     // 子側は parentPort の close でもゲートを戻す（ゲート復帰の 1 層目）
     engine?.stop();
     engine = null;

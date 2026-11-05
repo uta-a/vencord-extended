@@ -94,11 +94,9 @@ describe('parseConfigText', () => {
     expect(config.entryDelayMs).toBe(DFLT.entryDelayMs)
   })
 
-  it('ビデオボタンを隠す設定は既定で ON、真偽値でなければ既定へ戻す', () => {
-    expect(DFLT.hideCameraButton).toBe(true)
-    expect(parseConfigText(JSON.stringify({}), DFLT).config.hideCameraButton).toBe(true)
-    expect(parseConfigText(JSON.stringify({ hideCameraButton: false }), DFLT).config.hideCameraButton).toBe(false)
-    expect(parseConfigText(JSON.stringify({ hideCameraButton: 'false' }), DFLT).config.hideCameraButton).toBe(true)
+  it('廃止したビデオボタンを隠す設定は、古い設定に残っていても読み捨てる', () => {
+    expect('hideCameraButton' in DFLT).toBe(false)
+    expect('hideCameraButton' in parseConfigText(JSON.stringify({ hideCameraButton: true }), DFLT).config).toBe(false)
   })
 
   it('ほかのサーバーのサウンドを鳴らす設定は既定で OFF、真偽値でなければ既定へ戻す', () => {

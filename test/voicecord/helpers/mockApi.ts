@@ -104,7 +104,6 @@ export function createMockApi(): Api {
     entryDelayMs: 0,
     entryLeaveDebounceMs: 2500,
     normalizeRefDbfs: -14,
-    hideCameraButton: true,
     unlockSoundboard: false,
     calibration: null
   }

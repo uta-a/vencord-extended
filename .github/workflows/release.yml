@@ -1,0 +1,79 @@
+# vencord-extended: タグ（v<package.json の version>）を push したら、配布物を作って GitHub のリリースにする。
+#
+# 添付するもの
+#   patcher.js / preload.js / renderer.js / renderer.css   Discord に読ませる 4 ファイル（Vencord の更新が取りに来る）
+#   voicecord-runtime-win32-x64.zip                        VoiceCord のランタイム（patcher.js が埋めた sha256 で検証して取る）
+#   VencordExtendedInstaller.exe                           インストーラ（Node SEA の単一 exe）
+#
+# リリースの名前の末尾はコミットのハッシュにする。Vencord の更新（src/main/updater/http.ts）は、
+# この末尾と手元の版を比べて、更新があるかを決める。
+
+name: Release
+on:
+    push:
+        tags:
+            - "v*"
+
+permissions:
+    contents: write
+
+# pwsh は途中のコマンドの失敗を最後の 1 つでしか拾わないので、bash で 1 つずつ止める
+defaults:
+    run:
+        shell: bash
+
+jobs:
+    Release:
+        name: リリース
+        if: github.repository == 'uta-a/vencord-extended'
+        runs-on: windows-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+            - name: Use Node.js
+              uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+              with:
+                  node-version: 24
+                  cache: "pnpm"
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Check tag matches package.json
+              run: |
+                  version="v$(node -p "require('./package.json').version")"
+                  if [ "$version" != "$GITHUB_REF_NAME" ]; then
+                      echo "タグ $GITHUB_REF_NAME と package.json の版 $version が一致しません"
+                      exit 1
+                  fi
+                  echo "VENCORD_HASH=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_ENV"
+
+            - name: Test
+              run: |
+                  pnpm test:installer
+                  pnpm test:voicecord
+
+            - name: Build
+              run: pnpm build --standalone --voicecord-release=${{ github.ref_name }}
+
+            - name: Check VoiceCord runtime
+              run: node scripts/checkVoiceCordRuntime.mjs
+
+            - name: Build installer
+              run: node scripts/build/installer.mjs --version ${{ github.ref_name }}
+
+            - name: Create release
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  gh release create "$GITHUB_REF_NAME" \
+                      --title "Vencord Extended $GITHUB_REF_NAME $VENCORD_HASH" \
+                      --generate-notes \
+                      --latest \
+                      dist/patcher.js dist/preload.js dist/renderer.js dist/renderer.css \
+                      dist/voicecord-runtime-win32-x64.zip \
+                      dist/VencordExtendedInstaller.exe

@@ -44,6 +44,7 @@ catalog:
     "zip-local": "^0.3.5"
     "@vencord/monaco-editor": "0.57.0-beta.4"
     frida: 16.7.19
+    postject: 1.0.0-alpha.6
     vitest: ^5.1.0
     zustand: ^5.0.16
 

@@ -15,9 +15,14 @@
 //
 // --no-voicecord で全部飛ばす。frida ランタイムは Windows で frida が入っているときだけ配る。
 
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, utimesSync } from "fs";
+import { execSync } from "child_process";
+import { createHash } from "crypto";
+import { build } from "esbuild";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, utimesSync, writeFileSync } from "fs";
 import { createRequire } from "module";
-import { dirname, join } from "path";
+import { dirname, join, relative, sep } from "path";
+
+import { createZip } from "./zip.mjs";
 
 export const IS_VOICECORD_DISABLED = process.argv.includes("--no-voicecord");
 
@@ -127,4 +132,67 @@ export function copyVoiceCordRuntime() {
         n += copyTree(dir, join(dst, name));
     }
     console.log(`VoiceCord: frida ランタイム ${n} ファイルを更新`);
+}
+
+// ---- リリース用のランタイムの zip（--voicecord-release=<タグ>） ----
+
+export const RUNTIME_ZIP = "voicecord-runtime-win32-x64.zip";
+
+/** リリースのタグ。--voicecord-release=<タグ> のときだけ値がある */
+export const VOICECORD_RELEASE_TAG = process.argv.find(a => a.startsWith("--voicecord-release="))?.slice("--voicecord-release=".length) || null;
+
+function githubRepo() {
+    const env = process.env.GITHUB_REPOSITORY || process.env.VENCORD_REMOTE;
+    if (env) return env;
+    return execSync("git remote get-url origin", { encoding: "utf-8" }).trim()
+        .replace("https://github.com/", "").replace("git@github.com:", "").replace(/\.git$/, "");
+}
+
+/** @param {string} dir @returns {string[]} dir からの相対パス（「/」区切り）。ソースマップは配らない */
+function listFiles(dir) {
+    /** @type {string[]} */
+    const out = [];
+    const walk = d => {
+        for (const e of readdirSync(d, { withFileTypes: true })) {
+            const p = join(d, e.name);
+            if (e.isDirectory()) walk(p);
+            else if (!e.name.endsWith(".map") && e.name !== "manifest.json") out.push(relative(dir, p).split(sep).join("/"));
+        }
+    };
+    walk(dir);
+    return out.sort();
+}
+
+/**
+ * リリースのビルドで、patcher.js より先にエンジンとランタイムを作り、zip にする。
+ * 戻り値（必要な版・zip の sha256・取得元）を patcher.js に埋める（native/runtimeUpdate.ts）。
+ * リリースでなければ null（開発中は dist のランタイムをそのまま使い、取得しない）
+ * @returns {Promise<{ version: string, sha256: string, url: string } | null>}
+ */
+export async function prepareVoiceCordRelease() {
+    if (!VOICECORD_RELEASE_TAG) return null;
+    if (IS_VOICECORD_DISABLED) throw new Error("--voicecord-release と --no-voicecord は同時に使えません");
+    if (process.platform !== "win32" || !existsSync("node_modules/frida")) {
+        throw new Error("VoiceCord のリリースは、frida を入れた Windows でビルドしてください（ランタイムを zip に入れるため）");
+    }
+    await Promise.all(voiceCordBuildConfigs().map(cfg => build(cfg)));
+    copyVoiceCordRuntime();
+
+    const files = listFiles(OUT_DIR);
+    // 版は中身から作る。同じ中身なら同じ版になり、変わっていなければ利用者は取り直さない
+    const h = createHash("sha256");
+    for (const f of files) h.update(`${f}:${createHash("sha256").update(readFileSync(join(OUT_DIR, f))).digest("hex")};`);
+    const version = h.digest("hex").slice(0, 16);
+    const manifest = JSON.stringify({ version, tag: VOICECORD_RELEASE_TAG }, null, 2);
+    writeFileSync(join(OUT_DIR, "manifest.json"), manifest);
+
+    const zip = createZip([
+        ...files.map(f => ({ name: f, data: readFileSync(join(OUT_DIR, f)) })),
+        { name: "manifest.json", data: Buffer.from(manifest) }
+    ]);
+    writeFileSync(join("dist", RUNTIME_ZIP), zip);
+    const sha256 = createHash("sha256").update(zip).digest("hex");
+    const url = `https://github.com/${githubRepo()}/releases/download/${encodeURIComponent(VOICECORD_RELEASE_TAG)}/${RUNTIME_ZIP}`;
+    console.log(`VoiceCord: ランタイム ${version}（${files.length} ファイル、${(zip.length / 1024 / 1024).toFixed(1)} MB）`);
+    return { version, sha256, url };
 }
