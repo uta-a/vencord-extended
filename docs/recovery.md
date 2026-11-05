@@ -41,7 +41,7 @@ Vencord Extended（Vencord の非公式 fork。VoiceCord 入り）を、Windows 
 VoiceCord が「失敗」のまま動かない、ランタイムの取得に失敗し続ける、ファイルが壊れた、というときは、インストーラで「修復する」を選びます。
 
 - 最新のリリースの 4 ファイルを取り直します。
-- VoiceCord のランタイム（`dist\voicecord`、および用意中の `voicecord.next` / `voicecord.tmp` / `voicecord.old`）を消し、次の起動で取り直させます。
+- VoiceCord のランタイム（`dist\voicecord`、および用意中の `voicecord.next` / `voicecord.tmp-*` / `voicecord.old`）を消し、次の起動で取り直させます。
 - 設定には触れません。
 - ランタイムはすべての Discord（Stable・Canary など）で共有しています。ほかの Discord が起動していると修復を断るので、すべて終了してから行ってください。
 
