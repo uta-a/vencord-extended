@@ -11,6 +11,7 @@
 import fs from "fs";
 import { dirname, join, resolve } from "path";
 
+import { withRuntimeLock } from "../../src/plugins/voiceCord.discordDesktop/native/runtimeUpdate";
 import { applyInstall, planInstall, targetFor, uninstall } from "./apply";
 import { isRunning, type ProcessLister, type RunningCheck } from "./running";
 import { BRANCHES, type DiscordInstall, scanInstalls } from "./scan";
@@ -67,14 +68,10 @@ export interface InstallOptions {
 
 export function installTo(deps: ServiceDeps, install: DiscordInstall, source: DistSource, forceClose = false, opts: InstallOptions = {}): OpResult {
     // ランタイムはすべての Discord で共有している。ほかのブランチが動いていると、そのエンジンが使っているものを消してしまう
+    // ここでは Discord を終了させる前に断るための確認。消す直前にもう一度確かめる
     if (opts.resetRuntime) {
-        const others = BRANCHES.filter(b => b.exeName !== install.spec.exeName && isRunning(deps.listProcesses, b.exeName).running);
-        if (others.length > 0) {
-            return {
-                ok: false,
-                message: `${others.map(b => b.label).join("・")} が起動しています。VoiceCord のランタイムはすべての Discord で共有しているため、終了してから修復してください`
-            };
-        }
+        const busy = othersRunningMessage(deps, install);
+        if (busy) return { ok: false, message: busy };
     }
     return withDiscordClosed(deps, install, forceClose, () => {
         const paths = pathsFor(deps.localAppData);
@@ -85,7 +82,10 @@ export function installTo(deps: ServiceDeps, install: DiscordInstall, source: Di
         try {
             deployDist(paths, source);
             // Discord が止まっている間に消す（起動中はエンジンが frida の .node を掴んでいて消せない）
-            if (opts.resetRuntime) resetRuntime(paths);
+            if (opts.resetRuntime) {
+                const refused = resetRuntimeExclusive(deps, install, paths);
+                if (refused) return { ok: false, message: refused };
+            }
         } catch (e) {
             return { ok: false, message: `dist の配置に失敗しました: ${msg(e)}` };
         }
@@ -140,13 +140,40 @@ export function deployDist(paths: Paths, source: DistSource) {
     fs.cpSync(src, paths.dist, { recursive: true });
 }
 
-/** VoiceCord のランタイム（用意中・入れ替え待ちの分も）を消す。patcher.js が次の起動で取り直す */
+function othersRunningMessage(deps: ServiceDeps, install: DiscordInstall): string | null {
+    const others = BRANCHES.filter(b => b.exeName !== install.spec.exeName && isRunning(deps.listProcesses, b.exeName).running);
+    if (others.length === 0) return null;
+    return `${others.map(b => b.label).join("・")} が起動しています。VoiceCord のランタイムはすべての Discord で共有しているため、終了してから修復してください`;
+}
+
+/**
+ * ランタイムを、Discord 側の入れ替え・用意と同じロックの中で消す。ロックの中でほかの Discord をもう一度確かめる。
+ * 断ったときはその理由を返す
+ */
+export function resetRuntimeExclusive(deps: ServiceDeps, install: DiscordInstall, paths: Paths): string | null {
+    const res = withRuntimeLock(fs, join(paths.dist, "voicecord"), () => {
+        const busy = othersRunningMessage(deps, install);
+        if (busy) return busy;
+        resetRuntime(paths);
+        return "";
+    });
+    if (res === null) return "ほかの Discord が VoiceCord のランタイムを更新しています。すべての Discord を終了してから、もう一度修復してください";
+    return res || null;
+}
+
+/** VoiceCord のランタイム（用意中・入れ替え待ち・展開途中の分も）を消す。patcher.js が次の起動で取り直す */
 export function resetRuntime(paths: Paths) {
     // 開発用のリンクのときはリポジトリの dist を指しているので触らない
     if (lstatOrNull(paths.dist)?.isSymbolicLink()) return;
-    for (const suffix of ["", ".next", ".tmp", ".old"]) {
-        fs.rmSync(join(paths.dist, `voicecord${suffix}`), { recursive: true, force: true });
+    let names: string[];
+    try {
+        names = fs.readdirSync(paths.dist);
+    } catch {
+        return;
     }
+    // voicecord.lock は呼び出し元が持っているロックなので消さない
+    const targets = names.filter(n => n === "voicecord" || n === "voicecord.next" || n === "voicecord.old" || n.startsWith("voicecord.tmp"));
+    for (const name of targets) fs.rmSync(join(paths.dist, name), { recursive: true, force: true });
 }
 
 function lstatOrNull(p: string) {

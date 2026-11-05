@@ -54,17 +54,51 @@ export function isTrustedHost(url: string): boolean {
 const MAX_BYTES = 64 * 1024 * 1024; // renderer.js でも数 MB。取り違えた巨大な応答を読み切らない
 const TIMEOUT_MS = 2 * 60_000;
 
-export const httpFetch: Fetcher = async (url, accept) => {
-    if (!isTrustedHost(url)) throw new Error(`GitHub 以外からは取得しません: ${url}`);
-    const res = await fetch(url, { headers: { "Accept": accept, "User-Agent": "VencordExtendedInstaller" }, signal: AbortSignal.timeout(TIMEOUT_MS) });
-    // リダイレクト先も確かめる
-    if (!isTrustedHost(res.url)) throw new Error(`GitHub 以外へ転送されたので取得をやめました: ${res.url}`);
-    if (!res.ok) throw new Error(`${url} を取得できませんでした（${res.status} ${res.statusText}）`);
-    if (Number(res.headers.get("content-length")) > MAX_BYTES) throw new Error(`${url} が大きすぎます`);
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length > MAX_BYTES) throw new Error(`${url} が大きすぎます`);
-    return buf;
-};
+const MAX_REDIRECTS = 5;
+
+/**
+ * GitHub だけから取る。リダイレクトは自分で辿り、転送先も取りに行く前に確かめる（自動で辿ると、確かめる前に要求が出る）。
+ * 受信の途中でも上限を超えたら断つ（content-length が無い応答を全部読んでから測ると、メモリを使い切りうる）
+ */
+export async function httpFetch(url: string, accept: string, fetchImpl: typeof fetch = fetch, maxBytes = MAX_BYTES): Promise<Buffer> {
+    const signal = AbortSignal.timeout(TIMEOUT_MS);
+    let current = url;
+    for (let hops = 0; ; hops++) {
+        if (!isTrustedHost(current)) {
+            throw new Error(hops === 0 ? `GitHub 以外からは取得しません: ${current}` : `GitHub 以外へ転送されたので取得をやめました: ${current}`);
+        }
+        const res = await fetchImpl(current, { headers: { "Accept": accept, "User-Agent": "VencordExtendedInstaller" }, signal, redirect: "manual" });
+        if (res.status >= 300 && res.status < 400) {
+            const location = res.headers.get("location");
+            await res.body?.cancel();
+            if (!location) throw new Error(`${current} の転送先がありません（${res.status}）`);
+            if (hops >= MAX_REDIRECTS) throw new Error(`${url} の転送が多すぎます`);
+            current = new URL(location, current).toString();
+            continue;
+        }
+        if (!res.ok) throw new Error(`${current} を取得できませんでした（${res.status} ${res.statusText}）`);
+        return readLimited(res, maxBytes, url);
+    }
+}
+
+async function readLimited(res: Response, maxBytes: number, url: string): Promise<Buffer> {
+    if (Number(res.headers.get("content-length")) > maxBytes) throw new Error(`${url} が大きすぎます`);
+    if (!res.body) return Buffer.alloc(0);
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) {
+            await reader.cancel();
+            throw new Error(`${url} が大きすぎます`);
+        }
+        chunks.push(value);
+    }
+    return Buffer.concat(chunks);
+}
 
 export async function fetchLatestRelease(repo: string, get: Fetcher = httpFetch): Promise<Release> {
     const buf = await get(`https://api.github.com/repos/${repo}/releases/latest`, "application/vnd.github+json");

@@ -121,3 +121,71 @@ describe("取得先と修復の安全策", () => {
         assert.ok(fs.existsSync(path.join(paths.dist, "voicecord")));
     });
 });
+
+describe("取得と修復（2 回目のレビューの指摘）", () => {
+    const redirect = (to: string) => new Response(null, { status: 302, headers: { location: to } });
+
+    it("GitHub 以外への転送は、取りに行く前に断る", async () => {
+        const { httpFetch } = await import("../src/release");
+        const requested: string[] = [];
+        const stub = (async (url: string) => {
+            requested.push(url);
+            if (url.startsWith("https://github.com/")) return redirect("https://evil.example/x");
+            return new Response("evil");
+        }) as unknown as typeof fetch;
+        await assert.rejects(httpFetch("https://github.com/a/b/releases/download/v1/x", "*/*", stub), /GitHub 以外へ転送/);
+        assert.deepEqual(requested, ["https://github.com/a/b/releases/download/v1/x"]);
+    });
+
+    it("GitHub の中の転送は辿る", async () => {
+        const { httpFetch } = await import("../src/release");
+        const stub = (async (url: string) =>
+            url.startsWith("https://github.com/") ? redirect("https://objects.githubusercontent.com/y") : new Response("ok")) as unknown as typeof fetch;
+        assert.equal((await httpFetch("https://github.com/a/b/releases/download/v1/x", "*/*", stub)).toString(), "ok");
+    });
+
+    it("content-length が無い大きな応答は、受信の途中で断る", async () => {
+        const { httpFetch } = await import("../src/release");
+        let pulled = 0;
+        const stub = (async () => new Response(new ReadableStream({
+            pull(c) {
+                pulled++;
+                c.enqueue(new Uint8Array(1024));
+            }
+        }))) as unknown as typeof fetch;
+        await assert.rejects(httpFetch("https://api.github.com/x", "*/*", stub, 4096), /大きすぎます/);
+        assert.ok(pulled < 20, `読みすぎ: ${pulled}`);
+    });
+
+    it("修復の途中でほかの Discord が起動したら、ランタイムを消さない", async () => {
+        const { resetRuntimeExclusive } = await import("../src/service");
+        const paths = pathsFor(tmp);
+        fs.mkdirSync(path.join(paths.dist, "voicecord"), { recursive: true });
+        fs.mkdirSync(path.join(paths.dist, "voicecord.tmp-123-456"), { recursive: true });
+        const install = { spec: { branch: "canary", exeName: "DiscordCanary.exe", label: "Discord Canary", dirName: "DiscordCanary" } } as never;
+        const notRunning = "情報: 指定された条件に一致するタスクは実行されていません。";
+        const deps = (stableRunning: boolean) => ({
+            localAppData: tmp,
+            listProcesses: (image: string) => stableRunning && image === "Discord.exe" ? `"Discord.exe","1234","Console","1","100 K"` : notRunning,
+            killProcess: () => { },
+            sleep: () => { },
+            startDiscord: () => { }
+        });
+        assert.match(resetRuntimeExclusive(deps(true), install, paths) ?? "", /Discord Stable/);
+        assert.ok(fs.existsSync(path.join(paths.dist, "voicecord")));
+
+        assert.equal(resetRuntimeExclusive(deps(false), install, paths), null);
+        assert.deepEqual(fs.readdirSync(paths.dist), []);
+    });
+
+    it("Discord 側がランタイムのロックを持っていたら、修復は消さずに断る", async () => {
+        const { resetRuntimeExclusive } = await import("../src/service");
+        const paths = pathsFor(tmp);
+        fs.mkdirSync(path.join(paths.dist, "voicecord"), { recursive: true });
+        fs.writeFileSync(path.join(paths.dist, "voicecord.lock"), JSON.stringify({ pid: process.pid, token: "discord" }));
+        const install = { spec: { branch: "canary", exeName: "DiscordCanary.exe", label: "Discord Canary", dirName: "DiscordCanary" } } as never;
+        const deps = { localAppData: tmp, listProcesses: () => "情報: なし", killProcess: () => { }, sleep: () => { }, startDiscord: () => { } };
+        assert.match(resetRuntimeExclusive(deps, install, paths) ?? "", /更新しています/);
+        assert.ok(fs.existsSync(path.join(paths.dist, "voicecord")));
+    });
+});
