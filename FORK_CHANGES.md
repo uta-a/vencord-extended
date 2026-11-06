@@ -16,6 +16,7 @@ upstream から merge するときに衝突しうる場所はここに載って�
 - `pnpm-workspace.yaml` — catalog に frida・vitest・zustand・postject、`allowBuilds` に frida
 - `pnpm-lock.yaml` — 上記の依存の追加（upstream の取り込みで衝突したら、upstream 側を採ってから `pnpm install` で作り直す）
 - `scripts/build/build.mjs` — VoiceCord のエンジンと frida ランタイムのビルドを追加（本体は `scripts/build/voicecord.mjs`、`--no-voicecord` で無効化）。リリース（`--voicecord-release=<タグ>`）ではランタイムの zip を先に作り、その版・sha256・取得元を `VOICECORD_RUNTIME` として埋める
+- `src/main/updater/http.ts` — 変更一覧を既定ブランチの先頭ではなく、最新リリースのタグまでの差にする
 - `src/plugins/_core/settings.tsx` — 設定画面の見出しを Vencord Extended に
 - `src/plugins/_core/supportHelper.tsx` — 公式サポートチャンネルでの fork の警告、debug 情報のリンク先
 - `src/shared/vencordUserAgent.ts` — User-Agent を VencordExtended に

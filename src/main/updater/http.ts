@@ -30,6 +30,7 @@ import { serializeErrors, VENCORD_FILES } from "./common";
 
 const API_BASE = `https://api.github.com/repos/${gitRemote}`;
 let PendingUpdates = [] as [string, string][];
+let latestReleaseTag: string | null = null;
 
 async function githubGet<T = any>(endpoint: string) {
     return fetchJson<T>(API_BASE + endpoint, {
@@ -46,7 +47,8 @@ async function calculateGitChanges() {
     const isOutdated = await fetchUpdates();
     if (!isOutdated) return [];
 
-    const data = await githubGet(`/compare/${gitHash}...HEAD`);
+    // vencord-extended: 変更一覧も既定ブランチの先頭ではなく、取得するリリースのタグまでにする
+    const data = await githubGet(`/compare/${gitHash}...${latestReleaseTag}`);
 
     return data.commits.map((c: any) => ({
         // github api only sends the long sha
@@ -59,6 +61,7 @@ async function calculateGitChanges() {
 async function fetchUpdates() {
     const data = await githubGet("/releases/latest");
 
+    latestReleaseTag = data.tag_name;
     const hash = data.name.slice(data.name.lastIndexOf(" ") + 1);
     if (hash === gitHash)
         return false;
