@@ -45,7 +45,8 @@ jobs:
 
             - name: Check tag matches package.json
               run: |
-                  version="v$(node -p "require('./package.json').version")"
+                  # 版は package.json の version と vencordExtended.revision から組み立てる（scripts/build/common.mjs）
+                  version="v$(node -p "const p = require('./package.json'); p.version + '-ext.' + p.vencordExtended.revision")"
                   if [ "$version" != "$GITHUB_REF_NAME" ]; then
                       echo "タグ $GITHUB_REF_NAME と package.json の版 $version が一致しません"
                       exit 1

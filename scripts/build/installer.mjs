@@ -17,15 +17,16 @@
 
 import { execFileSync } from "child_process";
 import { build } from "esbuild";
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { createRequire } from "module";
 import { join } from "path";
+
+import { VERSION } from "./common.mjs";
 
 if (process.platform !== "win32") throw new Error("インストーラの exe は Windows でビルドしてください");
 
 const versionArg = process.argv.indexOf("--version");
-const pkg = JSON.parse(readFileSync("package.json", "utf8"));
-const version = versionArg > 0 ? process.argv[versionArg + 1] : pkg.version;
+const version = versionArg > 0 ? process.argv[versionArg + 1] : VERSION;
 
 const WORK = "dist/installer";
 const BUNDLE = join(WORK, "cli.cjs");
