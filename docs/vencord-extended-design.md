@@ -120,7 +120,7 @@ vencord-extended/
 | --- | --- |
 | `scripts/build/build.mjs` | VoiceCord のビルド対象を追加。無効化フラグ付き |
 | `src/main/updater/common.ts` ほか更新処理 | ランタイムの版確認と取得を追加（`VENCORD_FILES` は 4 つのまま） |
-| `package.json` | frida の依存、版表記（`-ext.<連番>`） |
+| `package.json` | frida の依存、fork の連番（`vencordExtended.revision`） |
 | `pnpm-workspace.yaml` | `allowBuilds` に frida を追加 |
 | ブランド表記（設定画面の見出し、User-Agent） | 「Vencord Extended」にする。`Vencord` / `VencordNative` などの識別子は互換のため変えない |
 | `supportHelper`、README | 非公式 fork であること、Vencord 公式に報告しないことを明記 |
@@ -345,6 +345,8 @@ Vencord の更新は「upstream/main を main へ merge する」形で取り込
 - 衝突を減らす規則: VoiceCord のコードは `src/voicecord/` とプラグインフォルダに限る。コア改変は `FORK_CHANGES.md` に載せたものだけにし、各所は数行のフックに留める
 - 互換性: プラグイン API、`Vencord` グローバル、設定ファイルの形式は変えない。userplugins は upstream と同じ手順で使える
 - バージョン表記: `<Vencord の版>-ext.<連番>`（例: `1.15.15-ext.1`）。どの upstream が基になっているかを一目で分かるようにする
+  - `package.json` の `version` は upstream と同じ値のままにし、連番は末尾の `vencordExtended.revision` に置く。`version` の行を書き換えると、upstream が版を上げるたびに取り込みで衝突するため。ビルド（`scripts/build/common.mjs` の `VERSION`）とリリースのタグの検査は、この 2 つから版を組み立てる
+  - upstream の版が上がったら連番を 1 に戻し、同じ upstream の版で fork だけをリリースするときは連番を上げる
 - 対外的な配慮: 不具合の報告先が upstream に向かわないようにする。`supportHelper` の表示と README に「非公式 fork。Vencord 公式に報告しないで」と明記する
 
 ## 障害時の振る舞いと安全設計

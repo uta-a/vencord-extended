@@ -36,7 +36,8 @@ import { builtinModules } from "module";
 /** @type {import("../../package.json")} */
 const PackageJSON = JSON.parse(readFileSync("package.json", "utf-8"));
 
-export const VERSION = PackageJSON.version;
+// vencord-extended: version は upstream と同じ値に保ち（取り込みで衝突させない）、fork の連番を後ろに付ける
+export const VERSION = `${PackageJSON.version}-ext.${PackageJSON.vencordExtended.revision}`;
 // https://reproducible-builds.org/docs/source-date-epoch/
 export const BUILD_TIMESTAMP = Number(process.env.SOURCE_DATE_EPOCH) || Date.now();
 
