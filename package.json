@@ -88,6 +88,6 @@
     },
     "packageManager": "pnpm@12.15.0",
     "vencordExtended": {
-        "revision": 2
+        "revision": 1
     }
 }
