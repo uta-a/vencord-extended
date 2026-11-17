@@ -55,10 +55,10 @@ export function toMono(channels: ArrayLike<number>[]): Float32Array {
   const out = new Float32Array(n);
   for (const ch of channels) {
     const len = Math.min(n, ch.length);
-    for (let i = 0; i < len; i++) out[i] = (out[i] as number) + (ch[i] as number);
+    for (let i = 0; i < len; i++) out[i] += ch[i] as number;
   }
   const inv = 1 / channels.length;
-  for (let i = 0; i < n; i++) out[i] = (out[i] as number) * inv;
+  for (let i = 0; i < n; i++) out[i] *= inv;
   return out;
 }
 
