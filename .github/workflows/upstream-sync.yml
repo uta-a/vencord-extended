@@ -21,6 +21,8 @@ env:
     FORCE_COLOR: true
     SYNC_BRANCH: sync/upstream
     GH_TOKEN: ${{ secrets.SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+    # upstream の remote を足すと、gh は既定で Vendicated/Vencord を相手にする。issue と PR をこのリポジトリに向けるため明示する
+    GH_REPO: ${{ github.repository }}
 
 jobs:
     Sync:
