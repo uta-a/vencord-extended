@@ -11,6 +11,7 @@ upstream から merge するときに衝突しうる場所はここに載って�
 
 <!-- 形式: 「- `パス` — 理由」。CI はバッククォート内のパスだけを読みます -->
 
+- `.oxlintrc.json` — `ignorePatterns` に fork で足した場所（`installer/`、`test/voicecord/`、frida エージェントの `src/voicecord/agent/`、fork 製の `scripts/` のスクリプト）を追加。upstream が lint の対象を全ファイルに広げたため、これまでどおり対象外にする
 - `README.md` — 冒頭に非公式 fork の告知
 - `package.json` — fork の連番（末尾の `vencordExtended.revision`。`version` は upstream と同じ値のままにする）、`inject` / `uninject` をインストーラ CLI に差し替え、`buildInstaller` / `test:installer` / `test:voicecord` を追加、frida（optional）・vitest・zustand・postject の依存
 - `pnpm-workspace.yaml` — catalog に frida・vitest・zustand・postject、`allowBuilds` に frida

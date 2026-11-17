@@ -22,8 +22,8 @@
 import { readdir } from "fs/promises";
 import { join, resolve } from "path";
 
-import { BUILD_TIMESTAMP, commonOpts, exists, globPlugins, IS_DEV, IS_REPORTER, IS_ANTI_CRASH_TEST, IS_STANDALONE, IS_UPDATER_DISABLED, resolvePluginName, VERSION, commonRendererPlugins, watch, buildOrWatchAll, stringifyValues, getMonacoEditorCdnUrl } from "./common.mjs";
-import { copyVoiceCordRuntime, prepareVoiceCordRelease, voiceCordBuildConfigs, VOICECORD_RELEASE_TAG } from "./voicecord.mjs"; // vencord-extended
+import { BUILD_TIMESTAMP, buildOrWatchAll, commonOpts, commonRendererPlugins, exists, getMonacoEditorCdnUrl,globPlugins, IS_ANTI_CRASH_TEST, IS_DEV, IS_REPORTER, IS_STANDALONE, IS_UPDATER_DISABLED, resolvePluginName, stringifyValues, VERSION, watch } from "./common.mjs";
+import { copyVoiceCordRuntime, prepareVoiceCordRelease, VOICECORD_RELEASE_TAG,voiceCordBuildConfigs } from "./voicecord.mjs"; // vencord-extended
 
 const defines = stringifyValues({
     IS_STANDALONE,
