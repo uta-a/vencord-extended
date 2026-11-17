@@ -90,11 +90,11 @@ export default definePlugin({
         {
             // ClipsSettingsStore: isClipsEnabledForUser reports other users' Nitro flags
             // received via RTC_CONNECTION_FLAGS; force it so any stream can be clipped
-            find: /isVoiceRecordingAllowedForUser\(e\)\{return \i\[e\]\?\.allowVoiceRecording\?\?!1\}/,
+            find: /isVoiceRecordingAllowedForUser\((\i)\)\{return \i\[\1\]\?\.allowVoiceRecording\?\?!1\}/,
             predicate: () => settings.store.clipAnyone,
             replacement: {
-                match: /isClipsEnabledForUser\(e\)\{return \i\[e\]\?\.clipsEnabled\?\?!1\}/,
-                replace: "isClipsEnabledForUser(e){return!0}"
+                match: /isClipsEnabledForUser\((\i)\)\{return \i\[\1\]\?\.clipsEnabled\?\?!1\}/,
+                replace: "isClipsEnabledForUser($1){return!0}"
             }
         },
         {
