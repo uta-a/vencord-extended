@@ -49,19 +49,14 @@ const settings = definePluginSettings({
     }
 });
 
-// Module computing the per-guild/per-user max upload size (getUserMaxFileSize + guild feature limits)
-const UploadUtils = findByCodeLazy("getUserMaxFileSize", "uploadSumTooLarge");
+// max(guild boost limit, current user's limit) for a guild, or the user's limit for null
+const getMaxFileSize: (guildId: string | null) => number = findByCodeLazy(".getUserMaxFileSize(", ".getGuild(");
 const DEFAULT_LIMIT_BYTES = 10 * 1024 * 1024;
 
 function getMaxUploadBytes(guildId: string | null) {
     try {
-        for (const key of Object.keys(UploadUtils)) {
-            const fn = (UploadUtils as Record<string, unknown>)[key];
-            if (typeof fn === "function" && fn.toString().includes("getUserMaxFileSize")) {
-                const limit = (fn as (guildId: string | null) => number)(guildId);
-                if (typeof limit === "number" && limit > 0) return limit;
-            }
-        }
+        const limit = getMaxFileSize(guildId);
+        if (typeof limit === "number" && limit > 0) return limit;
     } catch (err) {
         logger.error("Failed to resolve upload limit", err);
     }
