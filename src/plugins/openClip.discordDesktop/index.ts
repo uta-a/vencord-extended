@@ -43,7 +43,7 @@ const settings = definePluginSettings({
     },
     ffmpegPath: {
         type: OptionType.STRING,
-        description: "Path to the ffmpeg binary used to compress shared clips",
+        description: "Path to the ffmpeg binary used to compress shared clips (the file must be named ffmpeg or ffmpeg.exe)",
         default: "ffmpeg",
         restartNeeded: false
     }
@@ -131,7 +131,7 @@ export default definePlugin({
                 text: `OpenClip: compressing ${file.name} (${(file.size / 1048576).toFixed(1)} MB) to fit the ${Math.floor(target / 1048576)} MB upload limit...`
             });
             try {
-                const compressed = await Native.compressVideo(settings.store.ffmpegPath, await file.arrayBuffer(), target);
+                const compressed = await Native.compressVideo(await file.arrayBuffer(), target);
                 if (compressed.byteLength > 0 && compressed.byteLength < file.size) {
                     showToast({
                         text: `OpenClip: clip compressed to ${(compressed.byteLength / 1048576).toFixed(1)} MB`,

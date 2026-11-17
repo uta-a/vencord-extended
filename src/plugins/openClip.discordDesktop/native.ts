@@ -4,15 +4,24 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { RendererSettings } from "@main/settings";
 import { spawn } from "child_process";
 import { IpcMainInvokeEvent } from "electron";
 import { mkdtemp, readFile, rm, stat, writeFile } from "fs/promises";
 import { tmpdir } from "os";
-import { join } from "path";
+import { basename, join } from "path";
 
 const AUDIO_KBPS = 96;
 const MAX_ATTEMPTS = 3;
 const TIMEOUT_MS = 180_000;
+
+// The path comes from the main-side settings, not from the IPC caller, and must name an ffmpeg binary,
+// so code running in the renderer can't use this to launch arbitrary executables
+function getFfmpegPath() {
+    const path = RendererSettings.store.plugins?.OpenClip?.ffmpegPath || "ffmpeg";
+    if (!/^ffmpeg(\.exe)?$/i.test(basename(path))) throw new Error(`ffmpegPath must point to an ffmpeg binary: ${path}`);
+    return path;
+}
 
 function run(ffmpegPath: string, args: string[], timeoutMs: number) {
     const { promise, resolve, reject } = Promise.withResolvers<{ code: number | null; stderr: string }>();
@@ -43,10 +52,10 @@ async function getDurationSeconds(ffmpegPath: string, file: string) {
 
 export async function compressVideo(
     e: IpcMainInvokeEvent,
-    ffmpegPath: string,
     data: ArrayBuffer,
     targetBytes: number
 ): Promise<ArrayBuffer> {
+    const ffmpegPath = getFfmpegPath();
     const dir = await mkdtemp(join(tmpdir(), "openclip-"));
     try {
         const input = join(dir, "in.mp4");
