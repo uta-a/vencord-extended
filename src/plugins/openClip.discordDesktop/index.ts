@@ -27,7 +27,7 @@ const settings = definePluginSettings({
         type: OptionType.BOOLEAN,
         description: "Allow taking clips of other users' streams even when they don't have Nitro",
         default: false,
-        restartNeeded: false
+        restartNeeded: true
     },
     compressOnShare: {
         type: OptionType.BOOLEAN,
@@ -102,7 +102,6 @@ export default definePlugin({
             // target channel and clip metadata; intercept to compress oversized clips
             // and strip clip metadata the server would reject
             find: 'origin:"unknown:clip_share"',
-            predicate: () => settings.store.compressOnShare || settings.store.sendAsPlainVideo,
             replacement: {
                 match: /\(0,(\i)\.R\)\((\i),(\i),(\i)\.C\.ChannelMessage,\{filesMetadata:(\i),origin:"unknown:clip_share"\}\)/,
                 replace: '(0,$1.R)(await $self.compressClips($2,$3,$5),$3,$4.C.ChannelMessage,{filesMetadata:$5,origin:"unknown:clip_share"})'
