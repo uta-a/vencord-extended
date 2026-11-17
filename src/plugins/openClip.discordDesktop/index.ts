@@ -7,7 +7,7 @@
 import { definePluginSettings } from "@api/Settings";
 import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType, PluginNative } from "@utils/types";
-import { findByCodeLazy } from "@webpack";
+import { findByCodeLazy, findStoreLazy } from "@webpack";
 import { FluxDispatcher, showToast } from "@webpack/common";
 
 import type * as NativeTypes from "./native";
@@ -41,6 +41,12 @@ const settings = definePluginSettings({
         default: true,
         restartNeeded: false
     },
+    clipDiscordWindow: {
+        type: OptionType.BOOLEAN,
+        description: "Record the Discord window itself when no game is detected, so clips can be taken without a game or stream",
+        default: false,
+        restartNeeded: true
+    },
     ffmpegPath: {
         type: OptionType.STRING,
         description: "Path to the ffmpeg binary used to compress shared clips (the file must be named ffmpeg or ffmpeg.exe)",
@@ -63,8 +69,19 @@ function getMaxUploadBytes(guildId: string | null) {
     return DEFAULT_LIMIT_BYTES;
 }
 
+const ClipsStore = findStoreLazy("ClipsStore");
+
+let discordWindowHandle: string | null = null;
+
+// Stands in for the visible game when there is none, pointing the clips recorder at Discord's own window
+function withDiscordWindow<T extends { windowHandle?: string | null; }>(game: T | null | undefined) {
+    if (game?.windowHandle != null || !settings.store.clipDiscordWindow || discordWindowHandle == null) return game;
+    return { pid: 0, windowHandle: discordWindowHandle, name: "Discord" };
+}
+
+// Updating clipsEnabled to true also makes Discord (re)initialize the clips source
 function enableClips() {
-    if (!settings.store.forceEnable) return;
+    if (!settings.store.forceEnable && !ClipsStore.getSettings().clipsEnabled) return;
     FluxDispatcher.dispatch({
         type: "CLIPS_SETTINGS_UPDATE",
         settings: { clipsEnabled: true }
@@ -106,8 +123,35 @@ export default definePlugin({
                 match: /\(0,(\i)\.R\)\((\i),(\i),(\i)\.C\.ChannelMessage,\{filesMetadata:(\i),origin:"unknown:clip_share"\}\)/,
                 replace: '(0,$1.R)(await $self.compressClips($2,$3,$5),$3,$4.C.ChannelMessage,{filesMetadata:$5,origin:"unknown:clip_share"})'
             }
+        },
+        {
+            // ClipsManager: the clips source is only initialized for a visible game window, and
+            // is left alone when the game closes. Fall back to Discord's window in both cases
+            find: ".fireClipsInitEvent(),3e4)",
+            predicate: () => settings.store.clipDiscordWindow,
+            replacement: [
+                {
+                    match: /(let (\i)=)(\i\.\i\.getVisibleGame\(\));(if\(\2\?\.pid==null\|\|\2\?\.windowHandle==null)/,
+                    replace: "$1$self.withDiscordWindow($3);$4"
+                },
+                {
+                    match: /(let (\i)=\i\.\i\.getVisibleGame\(\);if\(\(0,\i\.\i\)\(\),this\.maybeOfferAutoclipsEaUpsell\(\i\),null==\2\))return;/,
+                    replace: "$1return void this.fireClipsInitEvent();"
+                }
+            ]
+        },
+        {
+            // Saving a clip requires a stream or a visible game window
+            find: "NO_ELIGIBLE_SOURCE,sourceChecks",
+            predicate: () => settings.store.clipDiscordWindow,
+            replacement: {
+                match: /(\i)=(\i\.\i\.getVisibleGame\(\))\?\.windowHandle!=null,(?=\i=\i\.\i\.hasClipsSource\(\))/,
+                replace: "$1=$self.withDiscordWindow($2)?.windowHandle!=null,"
+            }
         }
     ],
+
+    withDiscordWindow,
 
     // filesMetadata is mutated in place: entries of stripped/compressed clips are
     // replaced before the share call reads it
@@ -152,7 +196,14 @@ export default definePlugin({
         }));
     },
 
-    start() {
+    async start() {
+        if (settings.store.clipDiscordWindow) {
+            try {
+                discordWindowHandle = await DiscordNative.window.getNativeHandle();
+            } catch (err) {
+                logger.error("Failed to get the Discord window handle", err);
+            }
+        }
         enableClips();
     },
 
