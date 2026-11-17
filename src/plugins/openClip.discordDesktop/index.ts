@@ -129,6 +129,7 @@ export default definePlugin({
             showToast({
                 text: `OpenClip: compressing ${file.name} (${(file.size / 1048576).toFixed(1)} MB) to fit the ${Math.floor(target / 1048576)} MB upload limit...`
             });
+            let reason: string;
             try {
                 const compressed = await Native.compressVideo(await file.arrayBuffer(), target);
                 if (compressed.byteLength > 0 && compressed.byteLength < file.size) {
@@ -138,13 +139,15 @@ export default definePlugin({
                     });
                     return new File([compressed], file.name, { type: "video/mp4" });
                 }
+                reason = "the result was not smaller than the original";
             } catch (err) {
                 logger.error("Failed to compress clip", err);
-                showToast({
-                    text: `OpenClip: compression failed (${err instanceof Error ? err.message : String(err)}). Sending the original clip.`,
-                    variant: "critical"
-                });
+                reason = err instanceof Error ? err.message : String(err);
             }
+            showToast({
+                text: `OpenClip: compression failed (${reason}). The original clip is over the upload limit, so the upload will likely fail.`,
+                variant: "critical"
+            });
             return file;
         }));
     },
